@@ -1,0 +1,23 @@
+== NNUI_CELL  R3 grammar report (settle half) ==
+
+each layout: parse -> lower to World -> settle -> hash (x2, must match)
+
+  dashboard  cells 4  settled@255   hash 0x2cc3b2c865f4e8ea  reproducible PASS
+  article    cells 3  settled@162   hash 0x2e48ae36d2999efa  reproducible PASS
+  settings   cells 3  settled@97    hash 0xd9a28d59c004b275  reproducible PASS
+
+R3 settle (all layouts parse & settle deterministically): PASS
+
+== NNUI_CELL  R3 grammar report (token half) ==
+
+tokenizer: tiktoken cl100k_base (GPT-4 family)
+markup baseline: minimal functional HTML+CSS producing the same layout intent
+
+  layout       NNUI  markup   ratio  under 80?
+  dashboard      68     152   2.24x   yes
+  article        47     126   2.68x   yes
+  settings       52     127   2.44x   yes
+  TOTAL         167     405   2.43x
+
+R3 tokens (each layout < 80 NNUI tokens): PASS
+R3 tokens (NNUI cheaper than markup):    PASS

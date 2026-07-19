@@ -1,0 +1,27 @@
+== NNUI_CELL  R4 expression-registry report ==
+
+three core types (tabular / video / plain text):
+  CSV      traits ["numeric", "tabular"]
+           -> phenotype 'chart'  controls ["axis-select", "aggregate", "sort", "filter"]  skin 'data'
+  MP4      traits ["temporal", "video"]
+           -> phenotype 'player'  controls ["play-pause", "scrub", "volume", "fullscreen"]  skin 'media'
+  TXT      traits ["prose", "text"]
+           -> phenotype 'reader'  controls ["scroll", "font-size", "find"]  skin 'document'
+
+  distinct phenotypes => PASS
+
+fourth type (PNG image) BEFORE registration:
+  PNG      traits []
+           -> phenotype 'panel'  controls ["resize"]  skin 'bare'
+
+... register_type(detect_image, express_image)  [public API; core untouched]
+
+fourth type AFTER registration:
+  PNG      traits ["image", "raster"]
+           -> phenotype 'image-viewer'  controls ["zoom", "pan", "fit"]  skin 'media'
+
+== summary ==
+R4a three distinct phenotypes:            PASS
+R4b 4th unknown before registration:      PASS (germline)
+R4c 4th expresses after registry insert:  PASS
+R4d core types intact after extension:    PASS

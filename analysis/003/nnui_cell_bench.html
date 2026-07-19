@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NNUI_CELL · Rheology Bench</title>
+<style>
+  :root{
+    --tank:#0A100E; --tank2:#0E1613; --panel:#0C1512; --line:#1E2A26;
+    --ink:#C7D6CF; --mute:#6E827A; --dim:#47574F;
+    --jade:#3FD9A6; --cyan:#46C7D9; --amber:#E8B24C;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--tank); color:var(--ink);
+    font-family:var(--mono); -webkit-font-smoothing:antialiased; }
+  body{ display:flex; flex-direction:column; min-height:100vh; }
+
+  header{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+    padding:18px 22px 12px; border-bottom:1px solid var(--line); }
+  .mark{ font-size:15px; letter-spacing:.34em; text-transform:uppercase; color:var(--ink); }
+  .mark b{ color:var(--jade); font-weight:600; }
+  .sub{ font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--mute); }
+  .spacer{ flex:1; }
+  .stateflag{ font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+    padding:4px 10px; border:1px solid var(--line); border-radius:2px; color:var(--mute); }
+  .stateflag.oozing{ color:var(--cyan); border-color:#20423f; }
+  .stateflag.settled{ color:var(--jade); border-color:#1f4536; }
+  .stateflag.locked{ color:var(--amber); border-color:#4a3c1c; }
+
+  main{ flex:1; display:grid; grid-template-columns:1fr 268px; gap:0; min-height:0; }
+  @media (max-width:820px){ main{ grid-template-columns:1fr; } .rail{ border-left:0!important; border-top:1px solid var(--line);} }
+
+  .stage{ position:relative; min-height:0; overflow:hidden; }
+  canvas{ display:block; width:100%; height:100%; }
+  .hint{ position:absolute; left:16px; bottom:14px; font-size:11px; letter-spacing:.06em;
+    color:var(--dim); pointer-events:none; }
+
+  .rail{ border-left:1px solid var(--line); background:var(--panel);
+    padding:18px 18px 22px; display:flex; flex-direction:column; gap:22px; overflow-y:auto; }
+  .group h2{ font-size:10px; letter-spacing:.24em; text-transform:uppercase;
+    color:var(--dim); margin:0 0 12px; font-weight:500; }
+
+  .readout{ display:grid; grid-template-columns:auto 1fr; gap:6px 12px; align-items:center; }
+  .readout .k{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); }
+  .readout .v{ font-size:12px; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+  .meter{ grid-column:1 / -1; height:5px; background:#0a1512; border:1px solid var(--line);
+    border-radius:3px; overflow:hidden; margin-top:2px; }
+  .meter > i{ display:block; height:100%; width:0%;
+    background:linear-gradient(90deg,var(--jade),var(--cyan)); transition:none; }
+
+  label.dial{ display:block; }
+  .dial .row{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .dial .row .k{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--mute); }
+  .dial .row .v{ font-size:12px; color:var(--jade); font-variant-numeric:tabular-nums; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:3px;
+    background:var(--line); border-radius:2px; outline:none; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px;
+    border-radius:50%; background:var(--jade); border:2px solid var(--tank); cursor:pointer; }
+  input[type=range]::-moz-range-thumb{ width:15px; height:15px; border-radius:50%;
+    background:var(--jade); border:2px solid var(--tank); cursor:pointer; }
+
+  .btns{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button{ font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink); background:#0b1512; border:1px solid var(--line); border-radius:2px;
+    padding:9px 8px; cursor:pointer; transition:border-color .15s, color .15s; }
+  button:hover{ border-color:#2f453e; color:#fff; }
+  button:active{ background:#0e1a16; }
+  button.wide{ grid-column:1 / -1; }
+  button.lock[data-on="1"]{ color:var(--amber); border-color:#4a3c1c; background:#160f05; }
+
+  .note{ font-size:10.5px; line-height:1.55; letter-spacing:.03em; color:var(--dim); }
+  .note b{ color:var(--mute); font-weight:500; }
+  footer{ padding:10px 22px; border-top:1px solid var(--line);
+    font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);
+    display:flex; gap:16px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="mark"><b>NNUI</b>_CELL</div>
+  <div class="sub">Rheology Bench · Specimen 01</div>
+  <div class="spacer"></div>
+  <div id="flag" class="stateflag">—</div>
+</header>
+
+<main>
+  <div class="stage">
+    <canvas id="c"></canvas>
+    <div class="hint">drag inside the tank to stir — sustained force makes the medium yield and flow</div>
+  </div>
+
+  <aside class="rail">
+    <div class="group">
+      <h2>Instrument</h2>
+      <div class="readout">
+        <div class="k">State</div><div class="v" id="r-state">—</div>
+        <div class="k">Strain rate</div><div class="v" id="r-strain">—</div>
+        <div class="meter"><i id="r-strainbar"></i></div>
+        <div class="k">Cells</div><div class="v" id="r-cells">—</div>
+        <div class="k">Frame</div><div class="v" id="r-fps">—</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Solidity — the one dial</h2>
+      <label class="dial">
+        <div class="row"><span class="k">S</span><span class="v" id="r-s">0.30</span></div>
+        <input id="s-slider" type="range" min="0" max="1000" value="300">
+      </label>
+      <div class="note" style="margin-top:8px">
+        <b>0</b> flows freely · <b>→1</b> the yield diverges and the medium vitrifies solid.
+        Locking is the top of this dial, not a separate switch.
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Operations</h2>
+      <div class="btns">
+        <button id="b-scatter" class="wide">Scatter &amp; settle</button>
+        <button id="b-inject">Inject cell</button>
+        <button id="b-flick">Shake</button>
+        <button id="b-lock" class="lock wide" data-on="0">Lock&nbsp;·&nbsp;S→1</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="note">
+        <b>What you're watching.</b> The renderer is a stateless view of the solver
+        state — no tweens, no timelines. Motion is the XPBD solver relaxing under a
+        solidity-modulated Herschel–Bulkley law; a cell is <b>settled</b> only when its
+        strain rate falls below threshold. Same constitutive law, compliance mapping
+        and thixotropic arrest as the validated headless crate. Impact-hardening
+        (fast input stiffening) also lives in the law, but it's a high-strain-rate
+        regime — at hand speed the medium shear-thins and flows.
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span>MIVIM</span><span>One cell · one slime</span><span class="spacer" style="flex:1"></span>
+  <span id="foot-eq">τ_y(S)=τ_y0·(S/(1−S))^κ</span>
+</footer>
+
+<script>
+"use strict";
+/* ===================================================================
+   NNUI_CELL — faithful in-browser transcription of the validated Rust
+   solver (src/rheology.rs + src/solver.rs). Same constitutive law, same
+   viscosity→compliance bridge, same thixotropic yield arrest. This demo
+   is a VIEW of solver state (Invariant 6: no animation system). The Rust
+   crate remains the reference of record; this is workstream B.
+   =================================================================== */
+
+// ---- constitutive constants (match Rust) ----
+const TAU_Y0=1.0, KAPPA=1.5, K0=1.0, BETA=2.0, GAMMA_C=8.0, Q=2.0, PAP_M=50.0;
+
+const tauYofS = s => { s=Math.min(Math.max(s,0),1-1e-9); const r=s/(1-s); return TAU_Y0*Math.pow(r,KAPPA); };
+const kOfS    = s => K0*(1+BETA*s);
+const tauYeff = (s,xi,g)=> tauYofS(s)*xi*(1+Math.pow(Math.max(g,0)/GAMMA_C,Q));
+function etaApp(s,n,xi,g){ g=Math.max(g,1e-9);
+  const ty=tauYeff(s,xi,g);
+  const yieldT=ty*(1-Math.exp(-PAP_M*g))/g;
+  const flowT=kOfS(s)*Math.pow(g,n-1);
+  return yieldT+flowT; }
+const compliance = (s,n,xi,g,ab)=> ab/(1+etaApp(s,n,xi,g));
+function stepStructure(xi,tr,a,g,dt){ const nx=xi+dt*((1-xi)/tr - a*Math.max(g,0)*xi); return Math.min(Math.max(nx,0),1); }
+
+// ---- deterministic splitmix64-ish RNG (for reproducible scatter) ----
+let RNG=0x9e3779b9>>>0;
+function seed(x){ RNG=(x>>>0)||1; }
+function rnd(){ // xorshift32, deterministic
+  RNG^=RNG<<13; RNG>>>=0; RNG^=RNG>>17; RNG^=RNG<<5; RNG>>>=0; return RNG/4294967296; }
+
+// ---- world ----
+const DT=1/60, N_SOLVE=10, ALPHA_BASE=1e-2, ALPHA_WALL=1e-6, ALPHA_CONTACT=1e-6;
+const DAMPING=0.2, EPS_SETTLE=2e-2, YIELD_VEL=0.30;
+const SIDE=4, SPACING=1.0, PRAD=0.5, CELLSZ=7.3;
+const CELL=1.0; // contact grid cell (world units)
+
+const W = { W:64, H:48,
+  px:[],py:[],ppx:[],ppy:[],vx:[],vy:[],reg:[],trest:[],
+  rs:[],rn:[],rxi:[],rtr:[],ra:[],rfirst:[],rcount:[],
+  coh:[], // [a,b,rest] flattened triples
+  globalLock:0 // extra solidity floor applied by the LOCK control (0..1)
+};
+
+function clearWorld(){ for(const k of ["px","py","ppx","ppy","vx","vy","reg","trest","rs","rn","rxi","rtr","ra","rfirst","rcount","coh"]) W[k].length=0; }
+
+function addRegion(ox,oy,s){
+  const first=W.px.length;
+  for(let j=0;j<SIDE;j++) for(let i=0;i<SIDE;i++){
+    const x=ox+(i-(SIDE-1)/2)*SPACING, y=oy+(j-(SIDE-1)/2)*SPACING;
+    W.px.push(x); W.py.push(y); W.ppx.push(x); W.ppy.push(y);
+    W.vx.push(0); W.vy.push(0); W.reg.push(W.rs.length); W.trest.push(0);
+  }
+  for(let j=0;j<SIDE;j++) for(let i=0;i<SIDE;i++){
+    const idx=first+j*SIDE+i;
+    if(i+1<SIDE) W.coh.push(idx, first+j*SIDE+(i+1), SPACING);
+    if(j+1<SIDE) W.coh.push(idx, first+(j+1)*SIDE+i, SPACING);
+    if(i+1<SIDE&&j+1<SIDE) W.coh.push(idx, first+(j+1)*SIDE+(i+1), SPACING*Math.SQRT2);
+  }
+  W.rs.push(s); W.rn.push(0.8); W.rxi.push(1.0); W.rtr.push(0.25); W.ra.push(6.0);
+  W.rfirst.push(first); W.rcount.push(SIDE*SIDE);
+  // per-particle turgor rest = initial dist to region centroid
+  let sx=0,sy=0; for(let k=first;k<first+SIDE*SIDE;k++){ sx+=W.px[k]; sy+=W.py[k]; }
+  const inv=1/(SIDE*SIDE), cx=sx*inv, cy=sy*inv;
+  for(let k=first;k<first+SIDE*SIDE;k++){ W.trest[k]=Math.hypot(W.px[k]-cx,W.py[k]-cy); }
+}
+
+function build(nRegions, s0, sd){
+  clearWorld(); seed(sd||0xABCDEF);
+  const cols=Math.ceil(Math.sqrt(nRegions)), rows=Math.ceil(nRegions/cols);
+  W.W=cols*CELLSZ; W.H=rows*CELLSZ;
+  const jit=0.35*Math.min(W.W/cols,W.H/rows);
+  for(let r=0;r<nRegions;r++){
+    const col=r%cols, row=(r/cols)|0;
+    const ox=(col+0.5)*(W.W/cols)+(rnd()-0.5)*2*jit;
+    const oy=(row+0.5)*(W.H/rows)+(rnd()-0.5)*2*jit;
+    addRegion(ox,oy, s0);
+  }
+}
+
+function centroid(r){ let sx=0,sy=0; const f=W.rfirst[r],c=W.rcount[r];
+  for(let k=f;k<f+c;k++){ sx+=W.px[k]; sy+=W.py[k]; } const inv=1/c; return [sx*inv,sy*inv]; }
+
+function strainRates(){ const sr=new Array(W.rs.length);
+  for(let r=0;r<W.rs.length;r++){ const f=W.rfirst[r],c=W.rcount[r]; let s=0;
+    for(let k=f;k<f+c;k++) s+=Math.hypot(W.vx[k],W.vy[k]);
+    sr[r]=(s/c)/SPACING; } return sr; }
+
+function buildContacts(){
+  const grid=new Map(), inv=1/CELL, n=W.px.length;
+  for(let i=0;i<n;i++){ const gx=Math.floor(W.px[i]*inv), gy=Math.floor(W.py[i]*inv);
+    const key=gx+","+gy; let b=grid.get(key); if(!b){b=[];grid.set(key,b);} b.push(i); }
+  const pairs=[];
+  for(let i=0;i<n;i++){ const gx=Math.floor(W.px[i]*inv), gy=Math.floor(W.py[i]*inv);
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const b=grid.get((gx+dx)+","+(gy+dy)); if(!b) continue;
+      for(const j of b){ if(j<=i) continue; if(W.reg[i]===W.reg[j]) continue;
+        const rest=PRAD+PRAD, d=Math.hypot(W.px[i]-W.px[j],W.py[i]-W.py[j]);
+        if(d<rest*1.05) pairs.push(i,j,rest); } } }
+  return pairs;
+}
+
+// scratch lambda arrays reused per frame
+function project(kind,a,b,rest,cx,cy,nx,ny,alpha,lam,dt2){
+  const at=alpha/dt2;
+  if(kind===0||kind===2){ // dist / contact
+    let dx=W.px[a]-W.px[b], dy=W.py[a]-W.py[b]; let len=Math.hypot(dx,dy);
+    const C=len-rest; if(kind===2 && C>=0) return lam;
+    let ux=1,uy=0; if(len>1e-12){ ux=dx/len; uy=dy/len; }
+    const w=2.0, den=w+at; if(den===0) return lam;
+    const dl=(-C-at*lam)/den; lam+=dl;
+    W.px[a]+=ux*dl; W.py[a]+=uy*dl; W.px[b]-=ux*dl; W.py[b]-=uy*dl; return lam;
+  } else if(kind===1){ // turgor toward (cx,cy)
+    let dx=W.px[a]-cx, dy=W.py[a]-cy; let len=Math.hypot(dx,dy);
+    const C=len-rest; let ux=1,uy=0; if(len>1e-12){ux=dx/len;uy=dy/len;}
+    const den=1.0+at; if(den===0) return lam;
+    const dl=(-C-at*lam)/den; lam+=dl; W.px[a]+=ux*dl; W.py[a]+=uy*dl; return lam;
+  } else { // 3: wall, normal (nx,ny), offset rest
+    const C=W.px[a]*nx+W.py[a]*ny-rest; if(C>=0) return lam;
+    const den=1.0+at; if(den===0) return lam;
+    const dl=(-C-at*lam)/den; lam+=dl; W.px[a]+=nx*dl; W.py[a]+=ny*dl; return lam;
+  }
+}
+
+function effS(r){ return Math.max(W.rs[r], W.globalLock); }
+
+function step(){
+  const dt=DT, dt2=dt*dt, n=W.px.length;
+  const sr=strainRates();
+  for(let r=0;r<W.rs.length;r++) W.rxi[r]=stepStructure(W.rxi[r],W.rtr[r],W.ra[r],sr[r],dt);
+
+  for(let i=0;i<n;i++){ W.ppx[i]=W.px[i]; W.ppy[i]=W.py[i];
+    W.px[i]+=W.vx[i]*DAMPING*dt; W.py[i]+=W.vy[i]*DAMPING*dt; }
+
+  // assemble compliances per region
+  const cAlpha=new Array(W.rs.length);
+  for(let r=0;r<W.rs.length;r++) cAlpha[r]=compliance(effS(r),W.rn[r],W.rxi[r],sr[r],ALPHA_BASE);
+  const cents=[]; for(let r=0;r<W.rs.length;r++) cents.push(centroid(r));
+  const contacts=buildContacts();
+
+  // lambda stores
+  const nCoh=W.coh.length/3, nTur=n, nCon=contacts.length/3, nWall=n*4;
+  const lam=new Float64Array(nCoh+nTur+nCon+nWall);
+
+  for(let it=0; it<N_SOLVE; it++){
+    let li=0;
+    // cohesion
+    for(let c=0;c<W.coh.length;c+=3){ const a=W.coh[c],b=W.coh[c+1],rest=W.coh[c+2];
+      const r=W.reg[a]; lam[li]=project(0,a,b,rest,0,0,0,0,cAlpha[r],lam[li],dt2); li++; }
+    // turgor
+    for(let a=0;a<n;a++){ const r=W.reg[a]; const ce=cents[r];
+      lam[li]=project(1,a,0,W.trest[a],ce[0],ce[1],0,0,cAlpha[r],lam[li],dt2); li++; }
+    // contacts (stiff)
+    for(let c=0;c<contacts.length;c+=3){ const a=contacts[c],b=contacts[c+1],rest=contacts[c+2];
+      lam[li]=project(2,a,b,rest,0,0,0,0,ALPHA_CONTACT,lam[li],dt2); li++; }
+    // walls (stiff): left,right,bottom,top
+    for(let a=0;a<n;a++){
+      lam[li]=project(3,a,0,PRAD,       0,0, 1, 0, ALPHA_WALL,lam[li],dt2); li++;
+      lam[li]=project(3,a,0,PRAD-W.W,   0,0,-1, 0, ALPHA_WALL,lam[li],dt2); li++;
+      lam[li]=project(3,a,0,PRAD,       0,0, 0, 1, ALPHA_WALL,lam[li],dt2); li++;
+      lam[li]=project(3,a,0,PRAD-W.H,   0,0, 0,-1, ALPHA_WALL,lam[li],dt2); li++;
+    }
+  }
+
+  // velocity = true motion; then thixotropic yield arrest
+  for(let i=0;i<n;i++){ W.vx[i]=(W.px[i]-W.ppx[i])/dt; W.vy[i]=(W.py[i]-W.ppy[i])/dt; }
+  for(let r=0;r<W.rs.length;r++){ const vy=YIELD_VEL*W.rxi[r]; const f=W.rfirst[r],c=W.rcount[r];
+    for(let k=f;k<f+c;k++){ if(Math.hypot(W.vx[k],W.vy[k])<vy){ W.vx[k]=0; W.vy[k]=0; } } }
+}
+
+function maxSpeed(){ let m=0; for(let i=0;i<W.vx.length;i++){ const s=Math.hypot(W.vx[i],W.vy[i]); if(s>m)m=s; } return m; }
+
+/* ============================ rendering ============================ */
+const cvs=document.getElementById("c"), ctx=cvs.getContext("2d");
+let SCALE=1, OX=0, OY=0, DPR=Math.min(window.devicePixelRatio||1,2);
+function resize(){ const st=cvs.parentElement.getBoundingClientRect();
+  cvs.width=st.width*DPR; cvs.height=st.height*DPR;
+  const sx=cvs.width/W.W, sy=cvs.height/W.H; SCALE=Math.min(sx,sy)*0.94;
+  OX=(cvs.width-W.W*SCALE)/2; OY=(cvs.height-W.H*SCALE)/2; }
+window.addEventListener("resize",resize);
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(c1,c2,t){ return [lerp(c1[0],c2[0],t),lerp(c1[1],c2[1],t),lerp(c1[2],c2[2],t)]; }
+const JADE=[63,217,166], CYAN=[70,199,217], AMBER=[232,178,76];
+
+function render(){
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+  // tank glass
+  ctx.fillStyle="#0A100E"; ctx.fillRect(OX,OY,W.W*SCALE,W.H*SCALE);
+  // subtle floor meniscus glow
+  const g=ctx.createLinearGradient(0,OY,0,OY+W.H*SCALE);
+  g.addColorStop(0,"rgba(70,199,217,0.00)"); g.addColorStop(1,"rgba(63,217,166,0.06)");
+  ctx.fillStyle=g; ctx.fillRect(OX,OY,W.W*SCALE,W.H*SCALE);
+
+  // metaball-ish medium: soft additive discs, colour by region solidity
+  ctx.globalCompositeOperation="lighter";
+  const rpix=PRAD*SCALE*2.6;
+  for(let r=0;r<W.rs.length;r++){
+    const s=effS(r);
+    const base = s>0.75 ? mix(JADE,AMBER,Math.min((s-0.75)/0.25,1)) : mix(JADE,CYAN,(r*0.17)%1);
+    const [cr,cg,cb]=base;
+    const f=W.rfirst[r],c=W.rcount[r];
+    for(let k=f;k<f+c;k++){
+      const x=OX+W.px[k]*SCALE, y=OY+W.py[k]*SCALE;
+      const grd=ctx.createRadialGradient(x,y,0,x,y,rpix);
+      grd.addColorStop(0,`rgba(${cr|0},${cg|0},${cb|0},0.55)`);
+      grd.addColorStop(0.5,`rgba(${cr|0},${cg|0},${cb|0},0.18)`);
+      grd.addColorStop(1,`rgba(${cr|0},${cg|0},${cb|0},0)`);
+      ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(x,y,rpix,0,6.2832); ctx.fill();
+    }
+  }
+  // bright cores → gives the coalesced "surface" read
+  for(let r=0;r<W.rs.length;r++){
+    const s=effS(r);
+    const base = s>0.75 ? mix([210,235,225],AMBER,Math.min((s-0.75)/0.25,1)) : mix([210,245,232],[190,240,246],(r*0.17)%1);
+    const [cr,cg,cb]=base; const f=W.rfirst[r],c=W.rcount[r];
+    for(let k=f;k<f+c;k++){
+      const x=OX+W.px[k]*SCALE, y=OY+W.py[k]*SCALE;
+      ctx.fillStyle=`rgba(${cr|0},${cg|0},${cb|0},0.9)`;
+      ctx.beginPath(); ctx.arc(x,y,PRAD*SCALE*0.62,0,6.2832); ctx.fill();
+    }
+  }
+  ctx.globalCompositeOperation="source-over";
+  // tank frame
+  ctx.strokeStyle="#1E2A26"; ctx.lineWidth=1; ctx.strokeRect(OX+0.5,OY+0.5,W.W*SCALE-1,W.H*SCALE-1);
+}
+
+/* ============================ interaction ============================ */
+let dragging=false, lastX=0, lastY=0;
+function toWorld(ev){ const rect=cvs.getBoundingClientRect();
+  const x=(ev.clientX-rect.left)*(cvs.width/rect.width), y=(ev.clientY-rect.top)*(cvs.height/rect.height);
+  return [(x-OX)/SCALE,(y-OY)/SCALE]; }
+function stir(wx,wy,dvx,dvy){
+  const R=6.0; // world radius of the stir well
+  for(let i=0;i<W.px.length;i++){ const dx=W.px[i]-wx, dy=W.py[i]-wy; const d=Math.hypot(dx,dy);
+    if(d<R){ const w=1-d/R; W.vx[i]+=dvx*w*7; W.vy[i]+=dvy*w*7; } }
+}
+cvs.addEventListener("pointerdown",e=>{ dragging=true; const [x,y]=toWorld(e); lastX=x; lastY=y; cvs.setPointerCapture(e.pointerId); });
+cvs.addEventListener("pointermove",e=>{ if(!dragging) return; const [x,y]=toWorld(e);
+  stir(x,y,(x-lastX),(y-lastY)); lastX=x; lastY=y; });
+cvs.addEventListener("pointerup",e=>{ dragging=false; });
+cvs.addEventListener("pointercancel",e=>{ dragging=false; });
+
+// controls
+const slider=document.getElementById("s-slider");
+function setBaseSolidity(s){ for(let r=0;r<W.rs.length;r++) W.rs[r]=s; }
+slider.addEventListener("input",()=>{ const s=(+slider.value)/1000; document.getElementById("r-s").textContent=s.toFixed(2); setBaseSolidity(s); });
+document.getElementById("b-scatter").addEventListener("click",()=>{ const s=(+slider.value)/1000; build(currentN, s, (Math.random()*1e9)>>>0); resize(); });
+document.getElementById("b-inject").addEventListener("click",()=>{ currentN++; const s=(+slider.value)/1000;
+  // add a cell near the top-centre so you watch it drop in and settle
+  addRegion(W.W*0.5+(rnd()-0.5)*8, W.H*0.18, s); });
+document.getElementById("b-flick").addEventListener("click",()=>{ // displace positions; watch it heal
+  for(let i=0;i<W.px.length;i++){ W.px[i]+=(rnd()-0.5)*5; W.py[i]+=(rnd()-0.5)*5;
+    W.ppx[i]=W.px[i]; W.ppy[i]=W.py[i]; W.vx[i]=0; W.vy[i]=0; } });
+const lockBtn=document.getElementById("b-lock");
+lockBtn.addEventListener("click",()=>{ const on=lockBtn.dataset.on==="1"?0:1; lockBtn.dataset.on=on;
+  W.globalLock = on?1.0:0.0; lockBtn.textContent = on ? "Release · flow" : "Lock · S→1"; });
+
+/* ============================ loop ============================ */
+let currentN=16;
+const flag=document.getElementById("flag");
+let fpsEMA=16;
+function frame(t){
+  const t0=performance.now();
+  step();
+  render();
+  const ms=performance.now()-t0; fpsEMA=fpsEMA*0.9+ms*0.1;
+
+  const spd=maxSpeed();
+  const locked=W.globalLock>0.5;
+  const settled=spd<EPS_SETTLE;
+  document.getElementById("r-state").textContent = locked?"LOCKED":(settled?"SETTLED":"OOZING");
+  document.getElementById("r-strain").textContent = spd.toFixed(3);
+  // strain meter: 0..~1.5 mapped to width, drains as it settles
+  const pct=Math.min(spd/1.5,1)*100; document.getElementById("r-strainbar").style.width=pct.toFixed(1)+"%";
+  document.getElementById("r-cells").textContent = W.rs.length;
+  document.getElementById("r-fps").textContent = ms.toFixed(1)+" ms";
+
+  flag.textContent = locked?"LOCKED":(settled?"SETTLED":"OOZING");
+  flag.className = "stateflag "+(locked?"locked":(settled?"settled":"oozing"));
+
+  requestAnimationFrame(frame);
+}
+
+// boot
+build(currentN, 0.30, 0xABCDEF);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

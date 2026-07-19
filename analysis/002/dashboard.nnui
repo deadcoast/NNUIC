@@ -1,0 +1,7 @@
+cell main { S:0.3 D:0.6 hold revenue }
+cell k1 { hold kpi1 }
+cell k2 { hold kpi2 }
+cell k3 { hold kpi3 }
+bind k1 k2
+bind k2 k3
+contain { main k1 k2 k3 } in viewport
