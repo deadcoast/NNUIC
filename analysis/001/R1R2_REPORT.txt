@@ -1,0 +1,20 @@
+== NNUI_CELL  R1+R2 prototype report ==
+
+config: 50 regions x 5x5 = 1250 particles, container 60x52
+
+R1  steady-state cost: 1.3603 ms/frame  (budget 16.0)  => PASS
+R1  settles in 801 frames (max_speed 0.00e0 < eps 2.00e-2)
+
+R2  100 independent runs, settled-state FNV-1a hash:
+R2  hash = 0xdb5295e7d7bce689
+R2  all 100 identical => PASS   (111.2s)
+
+scaling probe (steady-state ms/frame, density held constant):
+     50 regions ( 1250 particles):  1.4417 ms/frame
+    100 regions ( 2500 particles):  2.9340 ms/frame
+    200 regions ( 5000 particles):  5.7816 ms/frame
+    400 regions (10000 particles): 11.8257 ms/frame
+
+== summary ==
+R1 (<16 ms/frame @ 50 regions): PASS
+R2 (100-run bit-identity):      PASS
