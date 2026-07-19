@@ -1869,7 +1869,7 @@ import re
 path="nnui_cell_bench.html"; src=open(path).read()
 new_script=r'''<script>
 "use strict";
-/* NNUI_CELL bench — a non-Newtonian (Herschel–Bulkley) medium poured into a
+/*NNUI_CELL bench — a non-Newtonian (Herschel–Bulkley) medium poured into a
    vessel. ILLUSTRATES the thesis: one continuous medium that fills the vessel,
    takes its shape, and vitrifies with solidity. Motion is solved each frame
    from material state (Invariant 6: renderer is a view of it); settling ends
@@ -1879,7 +1879,7 @@ new_script=r'''<script>
    is exact — and shear destroys xi, re-fluidizing locally. Overdamped
    quasi-static scheme (R1 correction #2): little carried momentum; body
    forces enter as displacements. Slosh = tilting the vessel (sustained body
-   force); stir = displacement of matter. One metaball surface, never dots. */
+   force); stir = displacement of matter. One metaball surface, never dots.*/
 
 const TAU_Y0=1.0, KAPPA=1.5, K0=1.0, BETA=2.0;
 const tauYofS = s => { s=Math.min(Math.max(s,0),1-1e-9); const r=s/(1-s); return TAU_Y0*Math.pow(r,KAPPA); };
@@ -1971,7 +1971,7 @@ function step(){
 }
 function z0(z){ return z; }
 
-/* ---------------- rendering ---------------- */
+/*---------------- rendering ---------------- */
 const cvs=document.getElementById("c"), ctx=cvs.getContext("2d");
 const off=document.createElement("canvas"), octx=off.getContext("2d");
 let SCALE=1, OX=0, OY=0, DPR=Math.min(window.devicePixelRatio||1,2);
@@ -2021,7 +2021,7 @@ function render(){
   ctx.fillStyle=gl; ctx.fillRect(0,0,cvs.width,cvs.height); ctx.restore();
 }
 
-/* ---------------- interaction ---------------- */
+/*---------------- interaction ---------------- */
 let dragging=false,lx=0,ly=0;
 function toW(e){ const rc=cvs.getBoundingClientRect(); const sx=(e.clientX-rc.left)*(cvs.width/rc.width), sy=(e.clientY-rc.top)*(cvs.height/rc.height);
   return [ (sx-OX)/SCALE, H-(sy-OY)/SCALE ]; }
@@ -2047,7 +2047,7 @@ const lockBtn=document.getElementById("b-lock");
 lockBtn.addEventListener("click",()=>{ const on=lockBtn.dataset.on==="1"?0:1; lockBtn.dataset.on=on; LOCK=on;
   lockBtn.textContent=on?"Release · flow":"Lock · S→1"; });
 
-/* ---------------- loop ---------------- */
+/*---------------- loop ---------------- */
 const flag=document.getElementById("flag");
 let msEMA=8;
 function frame(){
@@ -2245,7 +2245,7 @@ new="""  const Se=Math.max(SOL,LOCK?1:0);
   for(let i=0;i<N;i++){
     let rx=(x[i]-px[i])/dt, ry=(y[i]-py[i])/dt;
     let s=Math.hypot(rx,ry);
-    // tau_y_eff = tau_y * xi coupling (the crate's law): rebuilt structure RAISES
+    // tau_y_eff = tau_y* xi coupling (the crate's law): rebuilt structure RAISES
     // the yield, so slowing matter ratchets to a stop — thixotropic arrest.
     const deadV=dbase*(1+3*xi[i]);
     if(s<deadV || LOCK){ x[i]=px[i]; y[i]=py[i]; rx=0; ry=0; s=0; }  // sub-yield: no flow"""
@@ -2254,11 +2254,11 @@ s=s.replace(old,new)
 open("nnui_cell_bench.html","w").write(s)
 import re;m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
-node --check _x.js && echo "JS OK"; rm -f _x.js
+node --check_x.js && echo "JS OK"; rm -f _x.js
 python3 verify_all.pyOutputJS OK
-[pour->settle] settled@4.3s  latched=504/512  raw=0
-[slosh] mid strain=10.372 state=OOZING  ->  re-settled@0.2s
-[pour x4] during=OOZING  settled@5.4s  final 768 pts frame=7.6 ms
+[pour->settle] <settled@4.3s>  latched=504/512  raw=0
+[slosh] mid strain=10.372 state=OOZING  ->  <re-settled@0.2s>
+[pour x4] during=OOZING  <settled@5.4s>  final 768 pts frame=7.6 ms
 [lock] state=LOCKED
 Diagnosing timing anomalies in slosh test results.Settled pool — must show one medium filling the bowlMid-slosh — must show visible wave/displacementPivoting toward programmatic verification instead of guessing.Measuring medium connectivity and motion programmatically.Pivoted to programmatic analysis of medium connectivity and motion.Objective image analysis: connectivity, fill, slosh motion, lock colourbashpip install pillow numpy --break-system-packages -q 2>&1|tail -1; cd /tmp; python3 - <<'PY'
 from PIL import Image
@@ -2306,6 +2306,7 @@ for name in ("_f_settled","_f_slosh","_f_resettled","_f_locked"):
     print(f"{name}: matter%={frac*100:.1f} comps={len(sizes)} largest={dom*100:.0f}% xspan={span_x} ytop={top} amber={amber}")
 
 # motion check: settled vs slosh pixel difference
+
 a=load("/tmp/_f_settled.png"); b=load("/tmp/_f_slosh.png")
 if a.shape==b.shape:
     diff=(np.abs(a-b).sum(axis=2)>60).mean()
@@ -2336,7 +2337,7 @@ s=s.replace(old,new)
 open("nnui_cell_bench.html","w").write(s)
 import re;m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
-node --check _x.js && echo "JS OK"; rm -f _x.js
+node --check _x.js && echo "JS OK"; rm -f_x.js
 python3 verify_all.py
 python3 - <<'PY'
 from PIL import Image
@@ -2349,9 +2350,9 @@ def mask(im):
     mx=im.max(axis=2); mn=im.min(axis=2); return (mx>70)&((mx-mn)>25)
 ys,xs=np.where(mask(b)); print("slosh xspan:", xs.min(), xs.max(), " ytop:", ys.min())
 PYOutputJS OK
-[pour->settle] settled@4.3s  latched=493/512  raw=0
-[slosh] mid strain=9.024 state=OOZING  ->  re-settled@0.2s
-[pour x4] during=OOZING  settled@4.6s  final 768 pts frame=7.9 ms
+[pour->settle] <settled@4.3s>  latched=493/512  raw=0
+[slosh] mid strain=9.024 state=OOZING  ->  <re-settled@0.2s>
+[pour x4] during=OOZING  <settled@4.6s>  final 768 pts frame=7.9 ms
 [lock] state=LOCKED
 settled-vs-slosh changed: 2.3%
 settled-vs-resettled changed: 2.4%
@@ -2370,9 +2371,9 @@ def mask(im):
     mx=im.max(axis=2); mn=im.min(axis=2); return (mx>70)&((mx-mn)>25)
 ys,xs=np.where(mask(a)); print("settled xspan:",xs.min(),xs.max()," ytop:",ys.min())
 ys,xs=np.where(mask(b)); print("slosh   xspan:",xs.min(),xs.max()," ytop:",ys.min())
-PYOutput[pour->settle] settled@4.1s  latched=486/512  raw=5.072
-[slosh] mid strain=17.822 state=OOZING  ->  re-settled@0.6s
-[pour x4] during=OOZING  settled@5.1s  final 768 pts frame=8.3 ms
+PYOutput[pour->settle] <settled@4.1s>  latched=486/512  raw=5.072
+[slosh] mid strain=17.822 state=OOZING  ->  <re-settled@0.6s>
+[pour x4] during=OOZING  <settled@5.1s>  final 768 pts frame=8.3 ms
 [lock] state=LOCKED
 settled-vs-slosh changed: 4.0%
 settled-vs-resettled changed: 5.1%
@@ -2475,7 +2476,7 @@ s=s.replace(old,new)
 open("nnui_cell_bench.html","w").write(s)
 import re;m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
-node --check _x.js && echo "JS OK"; rm -f _x.js
+node --check _x.js && echo "JS OK"; rm -f_x.js
 python3 cap_settle.py && python3 stability.pyOutputJS OK
 capacity settle @ Nones  latched=1200/1200 raw=23.949
 10s after settle: {'SETTLED': 0, 'OOZING': 100}  flips=1
@@ -2518,7 +2519,7 @@ s=s[:old_start]+new+s[old_end:]
 open("nnui_cell_bench.html","w").write(s)
 import re;m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
-node --check _x.js && echo "JS OK"; rm -f _x.js
+node --check _x.js && echo "JS OK"; rm -f_x.js
 python3 cap_settle.py && python3 stability.pyOutputJS OK
 capacity settle @ 7.1s  latched=1160/1200 raw=5.406
 10s after settle: {'SETTLED': 59, 'OOZING': 41}  flips=30
@@ -2531,13 +2532,13 @@ s=s.replace("""    else if(rb && !LOCK && cageT[i]<24 && ++cageT[i]>=24){ xi[i]=
 open("nnui_cell_bench.html","w").write(s)
 import re;m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
-node --check _x.js && echo "JS OK"; rm -f _x.js
+node --check *x.js && echo "JS OK"; rm -f *x.js
 python3 cap_settle.py && python3 stability.py && python3 verify_all.pyOutputJS OK
 capacity settle @ 5.3s  latched=1193/1200 raw=0
 10s after settle: {'SETTLED': 100, 'OOZING': 0}  flips=0
-[pour->settle] settled@4.2s  latched=448/512  raw=0
-[slosh] mid strain=18.838 state=OOZING  ->  re-settled@0.6s
-[pour x4] during=OOZING  settled@4.7s  final 768 pts frame=8.0 ms
+[pour->settle] <settled@4.2s>  latched=448/512  raw=0
+[slosh] mid strain=18.838 state=OOZING  ->  <re-settled@0.6s>
+[pour x4] during=OOZING  <settled@4.7s>  final 768 pts frame=8.0 ms
 [lock] state=LOCKED
 Fresh captures + objective thesis check on final buildbashcd /tmp/nnui_solver/demo; python3 verify_all.py >/dev/null 2>&1 &
 wait
@@ -2547,8 +2548,8 @@ import numpy as np
 def load(p): return np.array(Image.open(p).convert("RGB")).astype(int)
 def mask(im):
     mx=im.max(axis=2); mn=im.min(axis=2); return (mx>70)&((mx-mn)>25)
-def comps(mask_):
-    m=mask_[::3,::3]
+def comps(mask*):
+    m=mask*[::3,::3]
     from collections import deque
     lab=np.zeros(m.shape,int); cur=0; sizes=[]
     for i in range(m.shape[0]):
