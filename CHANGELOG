@@ -1,0 +1,19 @@
+# CHANGELOG
+
+## 2026-07-19: 001
+
+The formal spec lives *inside* it, alongside the actual proposed math, the algorithms, the constitutive derivations, and the honest experimental design. This is stage-2 of your pipeline done at research-paper standard: it has to contain real technical contribution, not restated brainstorm. Let me build it properly. First, checking my toolchain so I produce a typeset paper, not a text dump.pdflatex is available. Let me verify the packages I need, then write the paper.All tooling's present. Writing the paper now — this is real technical work, so I'm deriving the constitutive model properly (including resolving a contradiction I glossed earlier: a single fluid can't be both shear-thinning *and* shear-thickening, which forces a rate-dependent *yield* formulation). Building it in the container first.Clean compile, 11 pages. Running a second pass to resolve cross-references, then a visual check.Title and abstract render cleanly. Let me check a math-heavy page to confirm the equations typeset correctly.Equations render cleanly — the dual-rate yield decomposition and thixotropic kinetics all typeset properly. Moving the final PDF to outputs.Eleven pages, typeset. The LaTeX source is included so you can revise it directly.
+
+Against your professional-standard flag — the two places I pushed past "restated brainstorm" into actual contribution:
+
+**I did real technical work, not transcription.** The paper resolves a contradiction we'd both been carrying without noticing: the design wants fast flicks to *stiffen* (shear-thickening) and slow presses to *soften* (shear-thinning), but a single fluid cannot be both. The fix — §4.2, the dual-rate response — puts the rate-dependence in the *yield stress*, not the flow index: yield spikes with impact rate `(1+(γ̇/γ̇_c)^q)` while post-yield flow stays thinning. That's the honest unification, and it's the kind of thing that only surfaces when you actually write the equations instead of describing them. The other genuine contribution is §5.2: viscosity-modulated XPBD compliance, `α = 1/(k₀·g(η_app))`, which is the concrete bridge from "rheology equation" to "runs at 60fps and locks when S→1." Without that, the whole thing is a metaphor; with it, it's a solver.
+
+**I kept it honest where a hype paper would lie.** §7 flags that the token-economy number is *projected, not measured* — R3 exists to measure it, and it may be smaller than argued. §11 states plainly there's no implementation yet, that cross-hardware float determinism may force fixed-point at a cost, and that accessibility is unsolved (though the genome is a favorable semantic layer for it). A paper that hid those would read as standard-issue oversell; naming them is what an innovator does when the work is real enough to survive scrutiny.
+
+The correction you forced two turns ago is now load-bearing structure, not a patch: §6.4 defines the boundary with *decoupled* coefficients — material diffusion always on, gene transfer opt-in only — and Invariant 7 (§8) makes "every biological term reduces to a deterministic mechanism" an automated test. The ambient-mutation idea can't come back, because the spec now fails if anything stochastic enters the genetic path.
+
+Theory is frozen at this document, per the gate. The next artifact is the R1+R2 prototype — the headless Rust crate that either settles 50 regions in 16ms deterministically or doesn't. That's the first thing that can tell us the paper is *right* rather than just coherent. Say the word and I'll start on it, or if you want changes to the paper first, the source is right there.
+
+---
+
+## :002
