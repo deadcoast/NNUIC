@@ -115,8 +115,9 @@ cell composer { hold draft }
 solidity composer 0.9
 contain { sidebar pane composer } in viewport` },
 ];
-const PALETTE = [[63,217,166],[70,199,217],[232,178,76],[186,120,222],
-                 [95,225,205]];
+// The documented NNLG palette (analysis/004, the validated bench): the
+// jade slime family. Amber is reserved for vitrified lock only.
+const PALETTE = [[63,217,166],[70,199,217],[80,210,190],[95,225,205]];
 
 const cvs = document.getElementById("c");
 const ctx = cvs.getContext("2d");
@@ -178,12 +179,14 @@ function render(cells) {
   cells.forEach((cell, k) => {
     const col = PALETTE[k % PALETTE.length];
     if (cell.pts.length < 3) return;
+    // bench color model: hue constant, falloff in ALPHA — the contrast
+    // pass then carves the meniscus without clipping the palette
     const g = octx.createRadialGradient(
       cell.cx, cell.cy, 0, cell.cx, cell.cy,
       Math.max(cvs.width, cvs.height) * 0.28);
     g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},1)`);
-    g.addColorStop(1, `rgba(${Math.round(col[0]*0.55)},` +
-      `${Math.round(col[1]*0.55)},${Math.round(col[2]*0.55)},1)`);
+    g.addColorStop(0.7, `rgba(${col[0]},${col[1]},${col[2]},0.75)`);
+    g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0.35)`);
     octx.beginPath();
     octx.moveTo(cell.pts[0][0], cell.pts[0][1]);
     for (let p = 1; p < cell.pts.length; p++)
@@ -197,14 +200,31 @@ function render(cells) {
     octx.stroke();
     octx.fill();
   });
+  // The documented NNLG surface (analysis/004): metaball fuse pass for
+  // the silhouette, true palette re-composited inside it (contrast at
+  // this fill density would clip every hue to cyan), inner luminosity,
+  // then the top gloss that reads as wet liquid glass.
   ctx.save();
-  ctx.filter = "blur(7px) contrast(12)";
+  ctx.filter = "blur(7px) contrast(11)";
   ctx.drawImage(off, 0, 0);
   ctx.restore();
   ctx.save();
-  ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.22;
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.filter = "blur(2px)";
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.30;
   ctx.filter = "blur(3px)";
   ctx.drawImage(off, 0, 0);
+  ctx.restore();
+  ctx.save();
+  ctx.globalCompositeOperation = "source-atop";
+  const gl = ctx.createLinearGradient(0, 0, 0, cvs.height);
+  gl.addColorStop(0, "rgba(255,255,255,0.22)");
+  gl.addColorStop(0.30, "rgba(255,255,255,0)");
+  ctx.fillStyle = gl;
+  ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.restore();
 }
 
