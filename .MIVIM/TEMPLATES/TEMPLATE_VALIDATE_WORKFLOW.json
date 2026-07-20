@@ -1,0 +1,32 @@
+[
+  {
+    "file": "TEMPLATE_MIVIM.md",
+    "definitions": 97,
+    "unique_active_references": 97,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "ONBOARDING.md",
+    "definitions": 93,
+    "unique_active_references": 93,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "REFRESHER.md",
+    "definitions": 12,
+    "unique_active_references": 12,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  }
+]

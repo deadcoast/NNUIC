@@ -1,0 +1,72 @@
+[
+  {
+    "file": "TEMPLATES/TEMPLATE_MIVIM.md",
+    "definitions": 97,
+    "unique_active_references": 97,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "TEMPLATES/TEMPLATE_TODO.md",
+    "definitions": 83,
+    "unique_active_references": 83,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "ONBOARDING.md",
+    "definitions": 143,
+    "unique_active_references": 143,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "REFRESHER.md",
+    "definitions": 12,
+    "unique_active_references": 12,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "../docs/DEVSPEC_WORKSTREAM_A.md",
+    "definitions": 97,
+    "unique_active_references": 97,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "../TODO.md",
+    "definitions": 73,
+    "unique_active_references": 73,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  },
+  {
+    "file": "../docs/DESIGN_API_CONTRACTS.md",
+    "definitions": 47,
+    "unique_active_references": 47,
+    "body_definitions": [],
+    "zero_placeholders": [],
+    "duplicate_definitions": [],
+    "missing_definitions": [],
+    "unused_definitions": []
+  }
+]

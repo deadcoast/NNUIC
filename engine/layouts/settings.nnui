@@ -1,0 +1,8 @@
+// Reconstructed reference layout (the original settings.nnui was never
+// committed; R3 recorded it as 3 cells / 52 tokens). New fixture, not a
+// historical reproduction.
+cell nav { S:0.7 hold sections }
+cell panel { S:0.4 hold options }
+cell footer { hold actions }
+bind nav panel
+contain { nav panel footer } in viewport

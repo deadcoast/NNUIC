@@ -1,0 +1,7 @@
+// Reconstructed reference layout (the original article.nnui was never
+// committed; R3 recorded it as 3 cells / 47 tokens). New fixture, not a
+// historical reproduction.
+cell head { S:0.6 hold title }
+cell body { S:0.4 n:0.7 hold article }
+cell aside { hold related }
+contain { head body aside } in viewport

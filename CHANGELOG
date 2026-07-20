@@ -1,19 +1,452 @@
 # CHANGELOG
 
-## 2026-07-19: 001
-
-The formal spec lives *inside* it, alongside the actual proposed math, the algorithms, the constitutive derivations, and the honest experimental design. This is stage-2 of your pipeline done at research-paper standard: it has to contain real technical contribution, not restated brainstorm. Let me build it properly. First, checking my toolchain so I produce a typeset paper, not a text dump.pdflatex is available. Let me verify the packages I need, then write the paper.All tooling's present. Writing the paper now — this is real technical work, so I'm deriving the constitutive model properly (including resolving a contradiction I glossed earlier: a single fluid can't be both shear-thinning *and* shear-thickening, which forces a rate-dependent *yield* formulation). Building it in the container first.Clean compile, 11 pages. Running a second pass to resolve cross-references, then a visual check.Title and abstract render cleanly. Let me check a math-heavy page to confirm the equations typeset correctly.Equations render cleanly — the dual-rate yield decomposition and thixotropic kinetics all typeset properly. Moving the final PDF to outputs.Eleven pages, typeset. The LaTeX source is included so you can revise it directly.
-
-Against your professional-standard flag — the two places I pushed past "restated brainstorm" into actual contribution:
-
-**I did real technical work, not transcription.** The paper resolves a contradiction we'd both been carrying without noticing: the design wants fast flicks to *stiffen* (shear-thickening) and slow presses to *soften* (shear-thinning), but a single fluid cannot be both. The fix — §4.2, the dual-rate response — puts the rate-dependence in the *yield stress*, not the flow index: yield spikes with impact rate `(1+(γ̇/γ̇_c)^q)` while post-yield flow stays thinning. That's the honest unification, and it's the kind of thing that only surfaces when you actually write the equations instead of describing them. The other genuine contribution is §5.2: viscosity-modulated XPBD compliance, `α = 1/(k₀·g(η_app))`, which is the concrete bridge from "rheology equation" to "runs at 60fps and locks when S→1." Without that, the whole thing is a metaphor; with it, it's a solver.
-
-**I kept it honest where a hype paper would lie.** §7 flags that the token-economy number is *projected, not measured* — R3 exists to measure it, and it may be smaller than argued. §11 states plainly there's no implementation yet, that cross-hardware float determinism may force fixed-point at a cost, and that accessibility is unsolved (though the genome is a favorable semantic layer for it). A paper that hid those would read as standard-issue oversell; naming them is what an innovator does when the work is real enough to survive scrutiny.
-
-The correction you forced two turns ago is now load-bearing structure, not a patch: §6.4 defines the boundary with *decoupled* coefficients — material diffusion always on, gene transfer opt-in only — and Invariant 7 (§8) makes "every biological term reduces to a deterministic mechanism" an automated test. The ambient-mutation idea can't come back, because the spec now fails if anything stochastic enters the genetic path.
-
-Theory is frozen at this document, per the gate. The next artifact is the R1+R2 prototype — the headless Rust crate that either settles 50 regions in 16ms deterministically or doesn't. That's the first thing that can tell us the paper is *right* rather than just coherent. Say the word and I'll start on it, or if you want changes to the paper first, the source is right there.
+Session journal for SLIME-UI / NNUI_CELL (MIVIM Development — *Standards in
+Novel Design*). Entries are numbered `## YYYY-MM-DD: NNN`, oldest first.
+Source of record for the full narrative is `logs/devlog`; this file is the
+condensed, consumable history.
 
 ---
 
-## :002
+## 2026-07-19: 001 — Genesis: NNLG concept, roles, anti-drift, theory core
+
+Project founded from the cornstarch-and-water insight: replace the box model
+with a single continuous medium governed by non-Newtonian (yield-stress fluid)
+physics. Established in this session:
+
+- **Naming**: SLIME is the application identity; NNLG (non-Newtonian Liquid
+  Glass) is the method name.
+- **Roles**: Claude (FABLE5) is master developer (research, technical design,
+  rigor); Heat is creative lead and user-feature executive (design authority,
+  creative direction).
+- **Pipeline standard**: research → paper → theory → planning → development →
+  application. No stage-skipping.
+- **Anti-drift principle** (load-bearing): novel design must not decay into
+  "what works"; sub-agents water down what they don't understand. Enforced by
+  artifacts (invariants-as-tests), not intentions.
+- **"Settled" defined** (creative lead): the UI has stopped self-adjusting —
+  like cornstarch fluid coming to rest in a bowl. Formalized as a measurable
+  strain-rate threshold, not a duration.
+- **Theory core**: energy functional `E = E_fill + E_cohesion + E_content`
+  damped by thixotropic viscosity; content as rigid inclusions in a
+  yield-stress matrix; continuum-over-boxes as the central thesis; theming as
+  a shader over one medium.
+- **Draft invariants 1–5**: no authored positions; real Herschel–Bulkley per
+  frame; locks are yield-stress fields not flags; threshold-terminated
+  settling; one medium.
+- **Research gates defined**: R1 discretization (50 regions < 16 ms/frame),
+  R2 determinism (bit-identical settles), R3 agent grammar (< ~80 tokens per
+  layout). Explicitly deferred: OS integration, multi-user, CSS interop,
+  scale beyond 50 regions.
+- Tool primitives sketched: t1 `slime-lock`, t2 `window-lock`, t3 `isolation`.
+
+## 2026-07-19: 002 — The cell reframe: NNUI_CELL and the two-axis model
+
+Major thematic reframing by the creative lead: the project becomes
+**NNUI_CELL** (non-Newtonian User Interface Cell). SLIME is reassigned as a
+*trait* of the Cell.
+
+- **Two-axis model**: rheological axis (how it flows — HB law, solidity,
+  settling) + genetic axis (what it becomes — genome, expression, phenotype).
+  Expressive power is the product, not the sum, of the axes.
+- **Genetic axis formalized**: `phenotype = express(genome)`; asset
+  assimilation = pure sequencing function (bytes in, trait-set out);
+  polymorphic rendering via an extensible expression registry; mitosis
+  reduced to genome-copy + independent re-expression (child inherits no
+  geometry — settles under its own local pressure).
+- **Germline decision**: cells are never empty; absence of absorbed data is
+  the germline genome Γ₀ expressing primitive phenotypes. One code path;
+  default UI is the same substance as user UI.
+- **Invariant 7 added**: every biological term must reduce to a defined
+  deterministic mechanism before entering the spec.
+- **R4 added** (expression registry gate); R3 sharpened to two verb families
+  (rheological + genetic).
+- **Course correction (user-forced)**: a proposed "ambient gene-sharing on
+  proximity" option was correctly rejected as contradicting frozen
+  requirements — it reduces to nondeterminism, which R2 and Invariant 7
+  forbid. Recorded as normative: the boundary carries two decoupled
+  coefficients — material diffusion D (always on) and gene transfer
+  (**default off, opt-in only, deliberate bind operation**). Nothing
+  stochastic anywhere in the genetic path; adjacency never moves genes.
+- **Theory frozen** at the gate. Decision: next artifact is the formal Proof
+  of Concept paper, then the R1+R2 prototype.
+
+## 2026-07-19: 003 — NNUI_CELL_PoC v0.1: the formal specification
+
+Wrote and typeset the canonical PoC paper (11 pages, LaTeX → PDF, now at
+`latex/v0.1/NNUI_CELL_PoC_v0.1.tex`). Real technical contribution beyond the
+brainstorm:
+
+- **Dual-rate yield resolution** (§4.2): the design wants fast flicks to
+  stiffen and slow presses to soften — impossible in a single flow index. The
+  rate-dependence moves into the *yield stress*
+  (`τ_y^eff = τ_y(S)·ξ·(1+(γ̇/γ̇_c)^q)`) while post-yield flow stays
+  shear-thinning. Honest unification, real rheology.
+- **Solidity-modulated Herschel–Bulkley law**: one field S ∈ [0,1) spans
+  liquid → locked; locking is the S→1 limit (τ_y → ∞), not a flag. The three
+  lock tools reduce to `set_solidity(mask, S)`.
+- **Viscosity-modulated XPBD compliance** (§5.2): `α = 1/(k₀·g(η_app))` — the
+  engineering bridge from constitutive law to a stable 60 fps solver.
+- Settling as overdamped gradient flow of an explicit energy functional,
+  terminated by strain-rate threshold; assimilation as parameter diffusion;
+  deterministic genetic operators (inject, mitose, bind); agent grammar with
+  worked examples; the seven invariants as executable specification;
+  R1–R4 stated as designed experiments with binary exit criteria.
+- Honesty kept where a hype paper would lie: token economy flagged as
+  projected-not-measured; no implementation yet; cross-hardware float
+  determinism may force fixed-point; accessibility unsolved.
+
+Theory frozen at this document.
+
+## 2026-07-19: 004 — R1+R2 pass: headless Rust prototype (analysis/001)
+
+Built the dependency-free (pure `std`, single-threaded) Rust crate
+implementing the full constitutive law and XPBD solver. **Both gates pass.**
+
+- **R1 PASS**: 50 regions (1,250 particles) at ~1.2–1.4 ms/frame vs a 16 ms
+  budget (~13× headroom). Scaling probe: 400 regions / 10,000 particles at
+  11.8 ms — still real-time. Settles in 801 frames to max_speed exactly 0.
+- **R2 PASS**: 100 independent settle runs bit-identical (FNV-1a hash
+  `0xdb5295e7d7bce689`), and the same hash across separate process
+  invocations. Determinism by construction: fixed dt, fixed constraint order,
+  index-order reductions, seeded init, single thread.
+- **9/9 tests green**: invariants I2 (law is real), I3 (locking is S→1),
+  I4 (threshold-terminated settling), R2 bit-identity, confinement, plus four
+  rheology unit properties.
+- **Four engineering corrections discovered** (the real value — invisible
+  from the equations, later normative in v0.2 as C1–C4):
+  1. Non-penetration must be stiff for every material; softness lives in
+     internal deformation, never in whether matter may interpenetrate
+     (softness-scaled contacts jammed at 724 persistent overlaps).
+  2. "Overdamped" means little carried momentum (~0.2), not heavy damping —
+     retaining 90% velocity is under-damped and produced exact deterministic
+     limit cycles.
+  3. Thixotropy is load-bearing, not decorative: frictionless frustrated
+     packings creep forever; ξ rebuilding at rest and raising the yield *is*
+     the physical settle. The metaphor turned out to be the mechanism.
+  4. Initial conditions are part of the contract: jittered-grid seeding
+     settles cleanly; a jammed clump is pathological.
+- Honest caveats recorded: cross-machine determinism untested; parameters
+  tuned, not derived; 5×5 blobs, no true rigid content inclusions yet.
+- Artifacts: `analysis/001/` (solver.rs, rheology.rs, invariants.rs,
+  R1R2_REPORT.txt, settled.png).
+
+## 2026-07-19: 005 — R3+R4 pass: agent grammar and expression registry (analysis/002)
+
+The remaining two research gates, both pure software. **Both pass** — all
+four gates R1–R4 now have passing, reproducible artifacts (15 automated
+tests green in the packaged crate).
+
+- **R3 PASS — agent grammar / token economy**: grammar lowered end-to-end
+  into the R1 solver (parse → build World → settle → hash, reproducible), so
+  "settles unambiguously" is demonstrated, not asserted. Token cost measured
+  with tiktoken cl100k_base against fair minimal HTML+CSS equivalents:
+  dashboard 68 / article 47 / settings 52 tokens — all under the 80-token
+  criterion, **2.43× cheaper** overall. The measured saving is the floor; the
+  structural claim (zero re-authoring on content/viewport change) is
+  additional.
+- **R4 PASS — expression registry**: CSV → chart, MP4 → player, TXT → reader
+  as distinct phenotypes; a fourth type (PNG → image-viewer) added through
+  the public `register_type` call with the core `sequence`/`express` path
+  untouched — "no core change" is structural, since both detection and
+  expression are registry-driven. Unknown types express germline `panel`.
+  Deterministic: same bytes, same phenotype, every time.
+- Artifacts: `analysis/002/` (grammar.rs, genetics.rs, dashboard.nnui,
+  R3_REPORT.txt, R4_REPORT.txt).
+
+## 2026-07-19: 006 — Workstream B visual bench: rejection, rebuild, arrest mechanism (analysis/003–004)
+
+The browser-based visual bench (`nnui_cell_bench.html`) — workstream B, the
+thesis made visible. Its history is the project's canonical drift example and
+recovery:
+
+- **v1 rejected**: shipped unseen, it rendered sixteen discrete dot-grids
+  floating in space that never took the vessel's shape — the negation of the
+  continuum thesis. Two real failures: no actual metaball field, and no fill
+  mechanism. Retained in the record (`analysis/003`) as the drift example
+  Invariants 1–6 exist to catch. **New standing rule: nothing visual ships
+  without its rendered output captured and verified first** (Playwright +
+  Chromium screenshot harness now in the toolchain).
+- **Rebuild**: one continuous Herschel–Bulkley medium poured into a bowl,
+  drawn as a single implicit metaball surface. Typed arrays + numeric spatial
+  hash + sprite blitting brought frame cost from 18–30 ms to 8–11 ms at
+  capacity (1,200 particles).
+- **Settling debugged honestly, not tuned blind**. Instrumented strain
+  trajectories exposed: a stale spatial hash (must rebuild every projection
+  iteration, not once per tick); a violation of R1 correction #2 in the demo
+  itself (88% carried momentum → strain frozen in a limit cycle at exactly
+  3.313); and a lying instrument (settled reported while positions still
+  advanced) → strain must be measured on realized post-arrest displacement.
+- **The arrest mechanism emerged** (later formalized in v0.2 §7): yield
+  deadband (sub-yield displacement reverted — below yield there is no flow;
+  the material holds residual stress at rest), structure ratchet (ξ
+  multiplies the yield, so slowing matter ratchets to an exact stop; rebuild
+  suspended while the vessel accelerates), and jamming latch (caged rattle is
+  macroscopically rest).
+- **Verified programmatically**, not by eyeball: settled matter is a single
+  connected component spanning the vessel in every state; a slosh visibly
+  displaces the pool and re-settles in under a second; full capacity settles
+  in ~5 s to strain exactly 0 with zero settled-state flicker over 10 s;
+  locked state amber-verified by channel analysis.
+- Artifacts: `analysis/004/` (final bench + README). The Rust crate remains
+  the reference of record; the bench illustrates.
+
+## 2026-07-20: 007 — NNUI_CELL_PoC v0.2: post-validation revision
+
+The spec revised against evidence (`latex/v0.2/NNUI_CELL_PoC_v0.2.tex`,
+14 pages; supersedes v0.1). **The continuum theory of v0.1 is unchanged** —
+theory remains frozen; only its discrete realization is sharpened by
+measurement.
+
+- The four R1 corrections admitted as **normative** (§6, C1–C4): stiff
+  topological constraints vs viscosity-modulated material constraints;
+  overdamped predictor with carry c ≈ 0.2; thixotropy as the settle
+  mechanism; spawn placement as part of the injection contract.
+- **Arrest mechanism formalized** (§7): yield deadband, structure ratchet,
+  jamming latch, honest strain measurement — making "settled" an exact,
+  honestly measured state (‖γ̇‖∞ = 0, flicker-free).
+- **Invariant 4 sharpened**: the settle predicate must read realized
+  post-arrest displacement, never a damped or zeroed velocity variable.
+- **Experiment plan converted to results**: R1–R4 all reported PASS with
+  measured numbers; workstream B bench recorded as corroboration, including
+  the honest account of its rejected first version.
+- Limitations rewritten against evidence: prototype scale (no true rigid
+  inclusions yet), tuned-not-derived constants, cross-hardware determinism
+  still untested, token economy measured narrowly, bench constants differ
+  from crate.
+- Pipeline position: specification → R1–R4 prototype *(done)* → visual demo
+  *(done)* → **agent-facing API (workstream A, the goal)** → integration.
+- Repository restructured: `latex/v0.1/`, `latex/v0.2/`, `analysis/001–004/`,
+  `logs/devlog`, `docs/research/methods.md`.
+
+## 2026-07-20: 008 — Documentation consolidation
+
+Translated the master devlog (`logs/devlog`, 2,593 lines) into this
+structured CHANGELOG and brought `README.md` up to date with the state of
+development (v0.2 spec, R1–R4 passed, next artifact: agent-facing API).
+
+## 2026-07-20: 009 — Framing addition: cross-surface portability use case
+
+Creative lead added a motivating use case to the standardization argument:
+applications that span surfaces with no shared UI standard (e.g. Claude
+Code / Codex as native desktop, web, IDE extension, and CLI) — under NNUIC,
+a window dragged from one surface to another is a cell moving between
+vessels.
+
+Reduced to mechanism before admission (per Invariant 7 discipline): a cell's
+complete description is genome Γ + material state {S, n, ξ, D} + containment;
+no geometry is stored because none is ever authored (Invariant 1), so the
+cell is host-portable by construction. Cross-surface "drag" = serialize →
+inject into a new vessel → re-express → re-settle under local pressure (the
+mitosis re-expression mechanism doing cross-surface work), with R2
+determinism guaranteeing identical settling on every host.
+
+Recorded in `README.md` as motivating use case only. Boundary held: actual
+OS/host integration remains explicitly deferred (stage-5) until the
+agent-facing API (workstream A) exists.
+
+## 2026-07-20: 010 — MIVIM adoption and the Workstream A dev-spec
+
+Ingested the `.MIVIM/` documentation workflow contracts (pseudo-citation
+format: body markers reference above, `(Z) Context-Citations` registry
+defines once below, `(Y)` usage index, link-complete + markdownlint-clean
+without config changes).
+
+Authored `docs/DEVSPEC_WORKSTREAM_A.md` — the planning-stage artifact for
+the agent-facing API — populated from `TEMPLATE_MIVIM`:
+
+- 97 registry entries, 97 unique active references; audit clean in every
+  category (no body definitions, zero placeholders, duplicates, missing, or
+  unused). Row appended to `.MIVIM/VALIDATE_WORKFLOW.json`.
+- New `[IV]` invariant namespace (IV01–IV07) mapping the paper's seven
+  invariants to reusable context handles; template research phase removed
+  per the unused-phase rule (theory frozen, R-gates executed).
+- Four real source records (RS01–RS04: v0.2 paper, R1R2/R3/R4 reports,
+  workstream B bench); evidence levels assigned honestly (R-gates EV04,
+  portability EV02, cross-hardware determinism EV01).
+- Milestones M1–M4 with binary exits: API round-trip, read path (honest
+  strain at the boundary), LLM drive, serialization/portability.
+- Validation caught and repaired two real defects: a wrapped body line that
+  became a live `[RQ02]:` definition above the registry (the exact MD053
+  failure mode ONBOARDING §7 warns about) and three MD013 line-length
+  violations in the identity table. Final state: markdownlint 0 issues.
+
+## 2026-07-20: 011 — Root execution ledger (TODO.md)
+
+Authored `TODO.md` at root from `TEMPLATE_TODO`: the staged,
+requirement-traced execution ledger that leads development out of planning.
+
+- Eight-document context ledger (D01–D08) chaining theory → dev-spec →
+  journal → README → devlog → validated artifacts → MIVIM package → this
+  ledger, with real-path links.
+- Sixteen tasks (TK01–TK16) across five stages: documentation hygiene,
+  discovery (WL01), design (WL03), build M1–M4 in enforced order (WL04),
+  and automated validation gates (WL05). Workflow numbering kept consistent
+  with the dev-spec, including the deliberately absent research phase.
+- Twelve project requirements (REQ01–REQ12) traced from the dev-spec;
+  coverage audit: every task carries a requirement, every requirement
+  appears in at least one task. REQ12 records that the first-consumer
+  decision (demo-first vs harness-first) belongs to the creative lead and
+  gates discovery.
+- Validation: link-completeness 72/72 clean in all categories, markdownlint
+  0 issues on first pass; audit row appended to
+  `.MIVIM/VALIDATE_WORKFLOW.json`.
+
+## 2026-07-20: 012 — MIVIM-supported development begins: Stage 0 + Stage 1
+
+MIVIM spec approved by the creative lead; execution of `TODO.md` started.
+
+- **TK01 done** — `CLAUDE.md` rewritten: v0.2 paths, implementation status
+  (R1–R4 passed), git-repository fact corrected, MIVIM documentation
+  contract added as required reading, dev-spec and TODO recorded.
+- **TK02 done** — `.MIVIM` package repaired: five stale relative links
+  (pointing to the package's original home outside this repo) fixed across
+  ONBOARDING, REFRESHER, and TEMPLATE_MIVIM; templates renamed to carry
+  `.md` (`TEMPLATE_MIVIM.md`, `TEMPLATE_TODO.md`); 21 pre-existing MD013
+  violations in ONBOARDING repaired (wrapped intro line, de-padded
+  namespace table) — all four package files now lint at 0 issues.
+- **Validator regenerated** with measured numbers: ONBOARDING's stale count
+  corrected (93 → 143 actual), TEMPLATE_TODO added (83/83), six files
+  tracked, all clean. Audit tooling itself was corrected first: two false
+  positives fixed (nested four-backtick fences, inline-code spans) before
+  trusting the numbers — the honest-instrument rule applied to validators.
+- **TK04 done** — read-path discovery recorded in the dev-spec (§6.1):
+  snapshot shape, settlement events carrying determinism hashes, honest
+  strain as the only motion figure, mid-settle reads, stable cell identity
+  with agent-readable traits, and the read-only guarantee.
+- **TK05 done** — creative-lead decision obtained and recorded: **headless
+  harness first**; the demo is built on top only after M1 and M2 pass.
+- Stage 1 (discovery) is complete. Next: Stage 2 design (TK06–TK08) —
+  worked examples for the API surface, the geometry-free serialization
+  format, and the read-path model.
+
+## 2026-07-20: 013 — Stage 2 complete: the API contracts (TK06–TK08)
+
+Authored `docs/DESIGN_API_CONTRACTS.md` (registered as D09 in the ledger):
+the worked-example contracts fixed before any build code, per the
+harness-first decision. Load-bearing design decisions:
+
+- **Submission surface (TK06)**: engine object over the unchanged R3
+  grammar; submission is atomic (full apply or full reject, state
+  untouched); the only geometry accepted is the vessel extent (environment,
+  not cell position). Error set enumerated (`E-PARSE`, `E-REF`, `E-CYCLE`,
+  `E-ASSET`, `E-RANGE`) with two deliberate non-errors: unknown asset types
+  express germline (per R4), and no coordinate error code exists because
+  the grammar has no coordinate production — the offense is
+  unrepresentable, not merely forbidden.
+- **Cell wire format (TK07)**: the agent grammar *is* the wire format — a
+  cell export is a valid program fragment. Field whitelist enforced by set
+  equality (not blacklist); genome travels as provenance (asset ref +
+  content hash, traits re-derived by pure sequencing); **binds do not
+  travel** (auto-rebinding would smuggle proximity coupling past the
+  opt-in boundary rule); canonical number form for bit-exact round-trips.
+- **Read path (TK08)**: Snapshot/CellView/Event surface realizing the
+  discovery record; detached read-only copies; strain is post-arrest
+  realized only; hashes exist only for settled states; deterministic event
+  order.
+- **Four executable conformance gates** (VG01 coordinate, VG02 schema,
+  VG03 instrument, VG04 hash) mapped to milestone exits — the build stage
+  inherits these as acceptance criteria.
+- Validation: D09 47/47 link-complete, lint 0 issues; TODO updated to
+  73/73 with D09 registered; validator regenerated. Stage 2 is complete —
+  build (TK09, engine graduation) is now unblocked.
+
+## 2026-07-20: 014 — Stage 3 begins: engine graduation (TK09)
+
+Discovered during build-precondition checks that the packaged crate's
+scaffolding never survived into the repository — only the five core source
+files were committed (`rheology.rs`, `solver.rs`, `invariants.rs`,
+`genetics.rs`, `grammar.rs`). TK09 became reconstruction + graduation:
+
+- `engine/` crate created. The five validated modules copied
+  **byte-identical** from `analysis/001`–`002`. Reconstructed around them:
+  `vec2.rs` (written against the exact call surface `solver.rs` consumes),
+  `lib.rs`, `Cargo.toml` (dependency-free, codegen-units=1), and
+  `compat.rs` carrying the two R3-era extensions the committed R1-era files
+  predate (`Material::from_dials`, `World::from_materials`) as separate
+  impl blocks so the validated sources stay untouched.
+- **15/15 tests green in release** (4 rheology + 3 genetics + 3 grammar +
+  5 invariants) — the exact suite the prototype claimed. TK09 exit met.
+- **Hash lineage check (honest result):** the reconstruction settles in
+  exactly 801 frames — matching the R1 record — and R2 within-machine
+  bit-identity holds (21 runs identical), but the settled-state hash is
+  `0x4010e87b957de8b4`, not the recorded `0xdb5295e7d7bce689`. The record
+  came from a Linux sandbox; this is Windows, where libm transcendentals
+  (`powf`, `exp`) differ. This is the first concrete data point for the
+  paper's documented cross-platform float-determinism limitation
+  (§12 / EV01); cause cannot be fully disambiguated from reconstruction
+  deltas without the original environment. Recorded in the ledger; the M1
+  exit correctly compares hashes within this engine, not against history.
+- Housekeeping: `engine/target/` ignored; README and CLAUDE.md updated to
+  name `engine/` as the live tree and `analysis/` as read-only history.
+
+## 2026-07-20: 015 — Milestone M1 passed, and the harness earned its keep
+
+Implemented the public API (`engine/src/api.rs`) per the D09 contracts:
+atomic submit over the unchanged R3 grammar, the five-code error table
+(with duplicate-declaration, self-bind, and two-node-cycle coverage),
+settle/tick/snapshot/poll_events, deterministic event order. Three
+reference layouts (dashboard committed; article/settings reconstructed and
+marked as new fixtures). Six-test M1 harness: hash equality vs the grammar
+path, VG04 repeatability, atomicity, VG01 coordinate-fuzz corpus, event
+order, and the sharpened-I4 flicker-free observation window.
+
+**The harness immediately caught a real physics defect**: a settled state
+erupted when stepped again (settle non-idempotent). Root cause chain,
+diagnosed with instrumented probes rather than tuning roulette:
+
+1. The R1-era crate measured arrested velocity (zeroed) while positions
+   crept — the lying instrument v0.2 §7 prohibits. Backported the yield
+   deadband: sub-yield displacement is *reverted*; strain is realized
+   post-arrest displacement.
+2. Frozen sub-yield prestress re-fired when rest-state compliance
+   stiffened (η_app diverges as strain rate → 0) — the v0.2 jamming latch
+   was missing. A per-particle anchor cage failed twice (limit cycles at
+   2.8, then 34 u/s — the exact C2 frozen-readout signature).
+3. Correct realization, all paper-grounded: **region-granular rest latch**
+   (a resting region is rigid below yield — its material constraints are
+   held, not projected; stored stress is sustained, never relaxed at
+   rest-stiffened compliance), **C1 topological guard** (interpenetrating
+   matter is never arrestable — freezing a wedge would make
+   non-penetration soft at rest), **matured-ratchet deadband**
+   (v_y = v0·ξ·(1+6ξ), the bench-validated shape closing the
+   creep band above bare yield), **no-carry dissipation** (velocity
+   reversal cancels carried momentum — C2 refinement killing
+   deterministic orbits), and the **zero-net-transport cage** (§7.3 as
+   written: high per-tick motion with no net transport is macroscopic
+   rest, overriding the C1 guard for topologically unresolvable wedges).
+   The settled-predicate now requires a sustained quiet window
+   (sharpened I4: exact AND stable).
+
+Results: **21/21 tests green**; settled states hold exact zero strain over
+600-frame observation; settle is idempotent; 50-region settle dropped from
+801 to 144 frames and the invariant suite from 20 s to 2.3 s (latching is
+also a performance win, as the bench observed); hashes bit-identical
+within-machine and across processes (`0xe77bf0903c6253a6` is the new
+platform baseline). Diagnostic instruments kept in `engine/examples/`.
+
+## 2026-07-20: 016 — Milestone M2 passed: the read path
+
+Completed the read path per D09 §4 (TK11), with a four-test M2 harness:
+
+- **Boundary polylines** at requested LOD: deterministic convex hull
+  (Andrew's monotone chain, total-order sort — no hash traversal, no
+  epsilon tuning); `Lod::Extents` keeps snapshots minimal.
+- **World→vessel mapping**: the solver's geometry stays in intrinsic
+  medium units; `VesselMap` is a pure, stateless view transform
+  (Invariant 6) closing the M1 note about vessel metadata. Verified: all
+  observable geometry maps inside the vessel and applying the map never
+  touches solver state.
+- **Events without polling**: settlement events fire on transitions read
+  from the solver's own jamming latch — the sustained settled predicate.
+  The first implementation used first-touch quiet and the harness caught
+  it flapping (15 GlobalSettled events in one run); the fix removed the
+  parallel bookkeeping entirely: a region is settled iff its latch is
+  engaged, so events cannot flap during consolidation. `TickReport`,
+  `Snapshot`, and per-cell `settled` all read the same predicate.
+- **VG03 instrument gate**: on every frame of a full settle run, observable
+  geometry changed ⇔ reported strain nonzero (both directions), and a
+  settled snapshot's geometry is frozen. The lying instrument fails the
+  build, permanently.
+
+**25/25 tests green.** M2 exit met: an agent obtains settled geometry and
+detects settlement purely by consuming events from a tick loop.
