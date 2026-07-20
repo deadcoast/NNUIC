@@ -1,0 +1,834 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\definecolor{ink}{HTML}{16181D}
+\definecolor{accent}{HTML}{1F6F5C}
+\definecolor{accent2}{HTML}{7A3B69}
+\definecolor{rule}{HTML}{C9CDD4}
+\definecolor{codebg}{HTML}{F5F6F8}
+
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent, citecolor=accent}
+
+\titleformat{\section}{\color{ink}\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\color{ink}\large\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.6em}
+
+\lstset{
+  basicstyle=\small\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{rule},
+  breaklines=true, columns=fullflexible,
+  xleftmargin=0.5em, xrightmargin=0.5em,
+  aboveskip=1em, belowskip=1em,
+}
+
+% operators
+\DeclareMathOperator{\express}{express}
+\DeclareMathOperator{\seq}{seq}
+\DeclareMathOperator{\bind}{bind}
+\DeclareMathOperator{\mitose}{mitose}
+\DeclareMathOperator{\inject}{inject}
+\DeclareMathOperator{\sig}{sig}
+\DeclareMathOperator{\compose}{compose}
+\newcommand{\R}{\mathcal{R}}
+\newcommand{\Gnome}{\Gamma}
+\newcommand{\Phe}{\Phi}
+\newcommand{\dt}{\Delta t}
+\newcommand{\rate}{\dot{\gamma}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+
+\newcommand{\note}[1]{\vspace{0.3em}\noindent{\color{accent2}\small\textsf{#1}}\vspace{0.3em}}
+
+\title{\vspace{-2em}\textbf{NNUI\_CELL}\\[0.3em]
+\large A Continuum Field Model for Self-Settling User Interfaces\\
+\large Governed by a Rheological Constitutive Law and a Genotype--Phenotype Expression Layer\\[0.6em]
+\normalsize Proof of Concept \& Formal Specification --- v0.2 (post-validation revision)}
+
+\author{R.~Forrestall (``Heat'')\\ \normalsize MIVIM Development --- \textit{Standards in Novel Design}}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Contemporary UI is authored as a large set of independent boxes, each carrying private
+geometry and style. Positions are hand-placed or solved by ad-hoc constraint systems, and
+adaptation to new content, new screens, or agent-driven edits requires re-authoring geometry.
+We propose \textbf{NNUI\_CELL}, a model that replaces the box abstraction with a single
+\emph{continuous medium} whose layout is never authored but always \emph{solved} from local
+material state. The medium is governed by two interlocking formal axes. The
+\textbf{rheological axis} treats every region as yield-stress fluid governed by a
+solidity-modulated Herschel--Bulkley constitutive law with a rate-dependent yield and
+thixotropic settling; layout equilibrium (``settled'') is defined as an energy minimum reached
+by overdamped gradient flow and terminated by a strain-rate threshold. The \textbf{genetic
+axis} treats every region as a cell carrying a \emph{genome} (absorbed data traits) that
+deterministically \emph{expresses} a \emph{phenotype} (rendered controls and skin) through an
+extensible registry. The two axes share a single interface primitive: a boundary carries an
+always-on material-diffusion coefficient and an opt-in, deterministic gene-transfer operation.
+We give the constitutive derivations, the discrete real-time solver (XPBD with
+viscosity-modulated compliance), a construction for bit-identical determinism, the genetic
+operator set (injection, mitosis, symbiotic binding), a compact declarative grammar intended
+for LLM/agent emission, and seven executable invariants that pin the design against
+reductive drift. We close with four designed proof-of-concept experiments and an honest
+account of limitations. \textbf{Revision v0.2:} all four experiments have since been executed
+and passed on a headless prototype; this revision folds the validated engineering corrections
+into the discrete realization --- most importantly a formal \emph{arrest mechanism} (yield
+deadband, structure ratchet, jamming latch) that makes ``settled'' an exact, honestly measured
+state --- and converts the experiment plan into results. The continuum theory of v0.1 is
+unchanged.
+\end{abstract}
+
+\noindent\textcolor{rule}{\rule{\linewidth}{0.8pt}}
+
+\subsection*{Revision history}
+\begin{center}
+\begin{tabular}{@{}p{0.08\linewidth}p{0.86\linewidth}@{}}
+\toprule
+\textbf{v0.1} & Specification with theory frozen; four designed experiments (R1--R4) stated
+with binary exit criteria; no implementation. \\
+\textbf{v0.2} & Post-validation revision. R1--R4 executed and passed (\S\ref{sec:experiments});
+four validated corrections to the discrete realization admitted as normative
+(\S\ref{sec:corrections}); the arrest mechanism formalized --- yield deadband, structure
+ratchet, jamming latch, honest strain measurement (\S\ref{sec:arrest}); Invariant~4 sharpened
+accordingly (\S\ref{sec:invariants}); limitations rewritten against evidence. The constitutive
+model (\S\ref{sec:hb}--\S\ref{sec:assim}) and the genetic axis (\S\ref{sec:genetic}) are
+\emph{unchanged}: theory remains frozen; only its discrete realization is sharpened by
+measurement. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Motivation: the box model is the wrong primitive}
+
+The dominant UI abstraction is a tree of independent rectangles. Each node owns its box, its
+style, and --- through cascade, flexbox, or grid --- a share of the negotiation over space.
+Three costs follow directly from the primitive itself, not from any particular framework:
+
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Assets clash.} Two components were never the same substance, so when they meet
+  they overlap, collide, or must be manually reconciled. Integration is glue work.
+  \item \textbf{Layout precedes design.} The pipeline is scaffold $\rightarrow$ fit $\rightarrow$
+  lay out $\rightarrow$ \emph{then} design. Structure and appearance are separate passes because
+  boxes hold both independently.
+  \item \textbf{Adaptation re-authors geometry.} New content, a resized viewport, or an
+  agent edit re-invokes an authoring step. For an autonomous agent this means emitting and
+  iterating explicit coordinates --- expensive in tokens and brittle under change.
+\end{enumerate}
+
+NNUI\_CELL removes the primitive. There are no independent boxes. There is one continuous
+medium, and a ``component'' is a region of that medium distinguished only by its local
+parameter field and its skin. Every consequence in this paper is a consequence of that single
+move; the rheology and the biology are the two mechanisms that make a continuum tractable and
+addressable.
+
+\subsection{Contributions}
+\begin{itemize}[leftmargin=1.4em]
+  \item A \textbf{solidity-modulated Herschel--Bulkley} constitutive law (\S\ref{sec:hb}) that
+  folds ``yield stress,'' ``consistency,'' and ``locked'' onto a single continuous field
+  $S\in[0,1]$, so that locking is the top of the resistance dial rather than a separate mechanism.
+  \item A \textbf{rate-dependent yield} formulation (\S\ref{sec:dualrate}) that resolves an
+  apparent contradiction in the design intent --- a material cannot be both shear-thinning and
+  shear-thickening --- by placing the rate dependence in the \emph{yield}, not the flow index.
+  \item A definition of \textbf{settling} as overdamped gradient flow of an explicit energy
+  functional (\S\ref{sec:energy}), terminated by a measurable strain-rate threshold.
+  \item \textbf{Viscosity-modulated XPBD compliance} (\S\ref{sec:xpbd}): the bridge that turns
+  the continuum law into a stable 60\,fps solver by setting each constraint's compliance from
+  the local apparent viscosity. This is the engineering core.
+  \item A deterministic \textbf{genotype$\rightarrow$phenotype} expression layer
+  (\S\ref{sec:genetic}) with an extensible registry, and a reduction of the biological operations
+  (injection, mitosis, binding) to defined, non-stochastic mechanisms.
+  \item A \textbf{unified boundary operator} (\S\ref{sec:boundary}) carrying two decoupled
+  coefficients, so physical proximity never forces genetic fusion.
+  \item Seven \textbf{executable invariants} (\S\ref{sec:invariants}) that convert anti-drift
+  intent into automated acceptance tests.
+\end{itemize}
+
+\section{Positioning and prior art}
+
+We separate what exists from what we claim is new, to keep the novelty statement honest.
+
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Spring / physics-flavoured animation} (iOS UIKit dynamics, Framer Motion, React
+  Spring) animates \emph{between} authored layouts using easing or spring presets. Layout itself
+  is still box-authored, and the physics is decorative. NNUI\_CELL has no animation system at all
+  (Invariant~6); motion is the solver relaxing, never a tween.
+  \item \textbf{Constraint layout} (Cassowary/AutoLayout, CSS flex/grid) solves geometry from
+  declared relations. This is the closest neighbour. The difference is the governing law:
+  constraint solvers optimize algebraic relations to a unique satisfying assignment; NNUI\_CELL
+  evolves a \emph{material} under a rheological law toward an energy minimum, giving it settling
+  dynamics, yield behaviour, locking, and content-preserving flow as one continuum rather than
+  as separate features.
+  \item \textbf{Soft-body / position-based dynamics} (PBD/XPBD in games) simulates deformable
+  matter. We reuse the solver but drive its parameters from a rheological constitutive law and
+  attach a semantic (genetic) layer, which PBD does not have.
+  \item \textbf{Blob / metaball visual effects} are rendering tricks with no layout semantics.
+  \item \textbf{Data-driven component selection} (schema-to-widget mappers, BI auto-charting)
+  resembles our expression layer but is not embedded in a shared physical medium and has no
+  notion of trait inheritance across a shared interface.
+\end{itemize}
+
+\noindent\textbf{Novelty claim (defensible):} \emph{a layout engine whose constitutive law is an
+actual rheological equation, in which authors and agents parameterize material properties and
+containment rather than coordinates, unified with a deterministic genotype$\rightarrow$phenotype
+expression layer at a single interface primitive.} We are unaware of prior art combining these.
+
+\section{The two-axis model}
+
+A region of the medium --- a \emph{cell} --- is fully specified only by two orthogonal axes.
+
+\begin{center}
+\begin{tabular}{@{}p{0.46\linewidth}p{0.46\linewidth}@{}}
+\toprule
+\textbf{Axis 1 --- Rheological} & \textbf{Axis 2 --- Genetic}\\
+\emph{how it flows} & \emph{what it becomes}\\
+\midrule
+Geometry over time: position, motion, settling, locking, boundaries. &
+Identity and manifestation: what data a cell holds and which controls it grows.\\
+State: $S,\,n,\,\xi$ (per point); $D,\,\text{bind}$ (per interface). &
+State: genome $\Gnome$; phenotype $\Phe=\express(\Gnome)$.\\
+Mechanism: solidity-modulated Herschel--Bulkley; energy-minimizing settling. &
+Mechanism: sequencing $\seq$; deterministic expression via registry $\R$.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\note{Design principle. The rheological axis alone cannot say how a dropped CSV becomes a chart;
+the genetic axis alone cannot say where the chart goes or how it settles. The model's expressive
+power is the product, not the sum, of the two axes.}
+
+\section{Rheological axis: constitutive model}
+
+\subsection{Solidity-modulated Herschel--Bulkley law}\label{sec:hb}
+
+The classical Herschel--Bulkley (HB) model describes a material that is rigid below a yield
+stress $\tau_y$ and flows above it:
+\begin{equation}
+\tau =
+\begin{cases}
+\text{rigid}, & \tau \le \tau_y,\\[2pt]
+\tau_y + K\,\rate^{\,n}, & \tau > \tau_y,
+\end{cases}
+\end{equation}
+with consistency $K$ and flow index $n$ ($n<1$ shear-thinning, $n>1$ shear-thickening),
+$\rate$ the shear rate.
+
+We introduce a single \emph{solidity} field $S(\mathbf{x})\in[0,1)$ that jointly modulates
+yield and consistency, so a single dial spans ``freely flowing'' to ``locked'':
+\begin{align}
+\tau_y(S) &= \tau_y^{0}\left(\frac{S}{1-S}\right)^{\!\kappa}, \label{eq:tauyS}\\
+K(S) &= K^{0}\,(1+\beta S),
+\end{align}
+with base scale $\tau_y^0$, shaping exponent $\kappa>0$, and consistency gain $\beta\ge0$.
+The pole at $S=1$ in \eqref{eq:tauyS} is deliberate: $\tau_y\to\infty$ as $S\to1$, so no finite
+input can yield the region --- \textbf{locking is the limit $S\to1$}, not a separate flag.
+This collapses the three lock tools into one primitive, \texttt{set\_solidity(mask,$S$)}
+(\S\ref{sec:tools}).
+
+For numerical use we adopt the Papanastasiou regularization of the yield term, which replaces
+the discontinuity by a steep smooth transition governed by a regularization parameter $m$:
+\begin{equation}
+\eta_{\text{app}}(\rate,S) \;=\;
+\tau_y(S)\,\frac{1-e^{-m\rate}}{\rate}\;+\;K(S)\,\rate^{\,n-1},
+\label{eq:etaapp}
+\end{equation}
+where $\eta_{\text{app}}$ is the apparent viscosity relating stress to rate,
+$\tau=\eta_{\text{app}}\rate$. Equation~\eqref{eq:etaapp} is the quantity the solver consumes.
+
+\subsection{The dual-rate response: rate-dependent yield}\label{sec:dualrate}
+
+The design intent contains an apparent contradiction. It asks for (a) rigidity by default;
+(b) a fast, accidental impulse to \emph{stiffen} and snap (Oobleck-like, shear-thickening);
+and (c) a slow, deliberate press to \emph{soften} and flow (reverse-Oobleck, shear-thinning).
+A single flow index $n$ cannot be both $<1$ and $>1$.
+
+The resolution is to separate the two effects onto different terms. Post-yield flow is
+shear-thinning ($n<1$: once you have committed, the material gets out of your way). The
+impulse-stiffening lives not in $n$ but in a \emph{rate-dependent yield}:
+\begin{equation}
+\tau_y^{\text{eff}}(S,\xi,\rate)
+\;=\;
+\underbrace{\tau_y^{0}\!\left(\tfrac{S}{1-S}\right)^{\!\kappa}}_{\text{solidity}}
+\cdot
+\underbrace{\xi}_{\text{structure}}
+\cdot
+\underbrace{\left(1+\left(\rate/\rate_c\right)^{q}\right)}_{\text{impact hardening}},
+\label{eq:dualrate}
+\end{equation}
+with critical rate $\rate_c$ and hardening exponent $q>0$; $\xi$ is the thixotropic structure
+parameter of \S\ref{sec:thixo}. A slow deliberate input ($\rate\ll\rate_c$) sees
+$\tau_y^{\text{eff}}\approx\tau_y(S)\xi$ and, if sustained, exceeds it and flows smoothly (thinning).
+A fast flick ($\rate\gg\rate_c$) sees the yield spike by $(\rate/\rate_c)^q$, so the impulse is
+rejected and the region reads as solid. This is a rate-dependent yield-stress fluid --- real
+rheology --- and it is the honest unification the flat model hid.
+
+\subsection{Thixotropic settling: the ``ooze''}\label{sec:thixo}
+
+Settling requires viscosity to \emph{rebuild} once input stops. We attach a structure
+parameter $\xi(\mathbf{x},t)\in[0,1]$ with standard breakdown/rebuild kinetics:
+\begin{equation}
+\frac{d\xi}{dt} \;=\; \frac{1}{T_r}\,(1-\xi)\;-\;a\,\xi\,\rate,
+\label{eq:thixo}
+\end{equation}
+rebuild timescale $T_r$, breakdown coefficient $a$. Under shear the second term dominates and
+structure erodes ($\xi\downarrow$, material softens and flows); at rest the first term restores
+$\xi\to1$ over $\sim T_r$, raising the effective yield through \eqref{eq:dualrate} until motion
+falls below threshold. The visible ``moves around, then settles into the bowl'' is exactly this
+relaxation. $T_r$ is the ``ooze'' dial; the design notes' thixotropy dial $\lambda$ is this $\xi$
+kinetics.
+
+\subsection{Content as rigid inclusions}\label{sec:inclusions}
+
+Text and images must never shear when their region flows. We model each content payload as a
+\emph{rigid inclusion} suspended in the yield-stress matrix: only the matrix deforms; the
+inclusion translates and rotates as a rigid body. Formally, inclusion $i$ contributes a
+deformation penalty (\S\ref{sec:energy}) enforced as a rigid shape-matching constraint in the
+solver (\S\ref{sec:xpbd}), guaranteeing a paragraph moves without smearing.
+
+\subsection{Settling as overdamped gradient flow}\label{sec:energy}
+
+Let $\mathbf{q}$ be the medium's configuration (discretized in \S\ref{sec:xpbd}). The rest state
+is the minimizer of a layout energy
+\begin{equation}
+E(\mathbf{q}) \;=\;
+\underbrace{w_f\!\int_{\Omega}\!\big(1-\rho(\mathbf{x})\big)^2 d\mathbf{x}}_{E_{\text{fill}}}
+\;+\;
+\underbrace{w_c\!\sum_{(i,j)\in\partial}\!\sigma_{ij}\,\ell_{ij}}_{E_{\text{cohesion}}}
+\;+\;
+\underbrace{w_r\!\sum_i \big\lVert \mathbf{F}_i-\mathbf{R}_i\big\rVert_F^2}_{E_{\text{content}}},
+\label{eq:energy}
+\end{equation}
+where $\rho$ is occupancy over the container $\Omega$ (so $E_{\text{fill}}$ penalizes voids ---
+the slime fills the bowl); $\sigma_{ij}$ is interfacial tension along boundary segment of length
+$\ell_{ij}$ (so $E_{\text{cohesion}}$ minimizes interface length, producing coalescence and
+menisci); and for each inclusion $\mathbf{F}_i$ is the deformation gradient with $\mathbf{R}_i$
+its best-fit rotation (so $E_{\text{content}}$ penalizes any non-rigid deformation of content).
+The weights $w_f,w_c,w_r$ are global design parameters.
+
+The medium follows overdamped dynamics --- inertia is dominated by the rheological dissipation,
+so we integrate a damped descent
+\begin{equation}
+\mathbf{M}\,\dot{\mathbf{q}} \;=\; -\nabla E(\mathbf{q}) \;-\; \mathbf{C}(\eta_{\text{app}})\,\dot{\mathbf{q}},
+\end{equation}
+with mass matrix $\mathbf{M}$ and viscous damping $\mathbf{C}$ set by the local apparent
+viscosity. \textbf{Settled} is a measurable predicate, not a duration:
+\begin{equation}
+\text{settled} \iff \norm{\rate}_\infty < \varepsilon_{\text{settle}}.
+\label{eq:settled}
+\end{equation}
+Relaxation is asymptotic and never clamped; rendering is cut below a perceptual threshold. The
+``alive'' quality is precisely this un-clamped decay --- never a snap.
+
+\subsection{Assimilation as controlled diffusion}\label{sec:assim}
+
+When a new region is injected, its material-parameter field $\phi=(S,n,\xi,\dots)$ blends into
+its neighbours by diffusion across the shared boundary:
+\begin{equation}
+\frac{\partial \phi}{\partial t} \;=\; \nabla\!\cdot\!\big(D(\mathbf{x})\,\nabla \phi\big),
+\label{eq:diffuse}
+\end{equation}
+with assimilation coefficient field $D$. Large $D$: the region melts in within a few frames.
+$D=0$: it never blends --- a permanent distinct island (modals, pinned widgets). Note
+\eqref{eq:diffuse} diffuses \emph{material parameters}, not content; content is a rigid inclusion
+(\S\ref{sec:inclusions}) and does not diffuse. The discrete explicit scheme
+$\phi^{t+1}=\phi^t+\dt\,D\,\nabla_h^2\phi^t$ is stable under the diffusion CFL condition
+$\dt \le h^2/(2d\,D)$ in $d$ dimensions with grid spacing $h$.
+
+\section{Discretization and the real-time solver}\label{sec:xpbd}
+
+\subsection{Why XPBD}
+Full Navier--Stokes or SPH would be accurate and unaffordable, and its results are not needed:
+we want stable, controllable, real-time relaxation, not physical fidelity. Extended
+Position-Based Dynamics (XPBD) provides unconditional stability, real-time performance on modest
+hardware, and --- critically --- a per-constraint \emph{compliance} that we can drive from the
+constitutive law. The medium is discretized as clusters of particles connected by constraints
+(distance, volume/occupancy, rigid shape-matching for inclusions, interface tension).
+
+\subsection{Viscosity-modulated compliance (the bridge)}\label{sec:compliance}
+XPBD solves each constraint $C_j$ with the update
+\begin{equation}
+\Delta\lambda_j \;=\;
+\frac{-\,C_j(\mathbf{x}) - \tilde{\alpha}_j\,\lambda_j}
+{\nabla C_j\,\mathbf{M}^{-1}\,\nabla C_j^{\!\top} + \tilde{\alpha}_j},
+\qquad
+\Delta\mathbf{x} \;=\; \mathbf{M}^{-1}\nabla C_j^{\!\top}\,\Delta\lambda_j,
+\label{eq:xpbd}
+\end{equation}
+where $\lambda_j$ is the constraint's Lagrange multiplier and $\tilde{\alpha}_j=\alpha_j/\dt^2$
+is its compliance. The central move of this paper is to set compliance from the local apparent
+viscosity \eqref{eq:etaapp}:
+\begin{equation}
+\alpha_j \;=\; \frac{1}{k_0\,g\!\big(\eta_{\text{app}}(S,\xi,\rate)\big)},
+\qquad g \text{ monotone increasing}.
+\label{eq:alpha}
+\end{equation}
+As $S\to1$, $\eta_{\text{app}}\to\infty$, so $\alpha_j\to0$ and the constraint becomes perfectly
+rigid --- the region is \emph{locked}. As $S\to0$ the constraint is highly compliant --- the
+region \emph{flows}. Thus one field $S$, through \eqref{eq:etaapp}--\eqref{eq:alpha}, spans the
+entire range from liquid to locked, per constraint, per frame. Rigid content inclusions use
+$\alpha_j\to0$ shape-matching constraints, realizing $E_{\text{content}}$.
+
+\subsection{The solver loop}
+
+\begin{algorithm}[H]
+\SetAlgoLined
+\DontPrintSemicolon
+\KwIn{particles $\mathbf{x}$, velocities $\mathbf{v}$, fields $(S,n,\xi,D)$, constraints $\{C_j\}$}
+\KwOut{next-frame $\mathbf{x}',\mathbf{v}'$}
+$\mathbf{x}^{p} \gets \mathbf{x} + c\,\dt\,\mathbf{v} + \dt^2\,\mathbf{b}$ \tcp*{overdamped predict: carry $c\!\approx\!0.2$ (C2); body/layout forces $\mathbf{b}$ enter as displacements}
+estimate local shear rate $\rate$ from the predicted strain\;
+update structure $\xi$ by \eqref{eq:thixo}; update $\eta_{\text{app}}$ by \eqref{eq:etaapp}\;
+diffuse fields $\phi$ by \eqref{eq:diffuse} (assimilation)\;
+\For{$\text{iter} = 1 \dots N_{\text{solve}}$}{
+  \ForEach{constraint $C_j$ \textbf{in fixed sorted order}}{
+    compute compliance $\tilde{\alpha}_j$ by \eqref{eq:alpha}\;
+    apply XPBD update \eqref{eq:xpbd} to $\mathbf{x}^{p}$\;
+  }
+}
+apply the \textbf{arrest phase} (Algorithm~\ref{alg:arrest}): yield deadband, structure
+ratchet, jamming latch\;
+$\mathbf{v}' \gets (\mathbf{x}^{p}-\mathbf{x})/\dt$ \emph{after} arrest;\quad $\mathbf{x}' \gets \mathbf{x}^{p}$\;
+\If{$\norm{\rate_{\text{realized}}}_\infty < \varepsilon_{\text{settle}}$}{mark region \textbf{settled}; freeze rendering}
+\caption{One deterministic solver tick (v0.2: overdamped predict + arrest phase)}
+\end{algorithm}
+
+\note{v0.2 change: the predictor and the tail of the tick are revised per the validated
+corrections (\S\ref{sec:corrections}) and the arrest mechanism (\S\ref{sec:arrest}). Constraint
+projection itself, and the compliance bridge \eqref{eq:alpha}, are unchanged. Engineering note:
+any acceleration structure used for contact generation (spatial hash, grid) must be rebuilt
+\emph{every projection iteration}, not once per tick --- stale neighbourhoods miss drifted
+overlaps and manifest as a pile that never stabilizes.}
+
+\subsection{Determinism by construction}\label{sec:determinism}
+Bit-identical settling (experiment R2) is required for testing, accessibility, and agent trust.
+It is achieved, not hoped for: (i) fixed timestep $\dt$; (ii) constraints solved in a fixed order
+sorted by stable identifier (Gauss--Seidel, no data races); (iii) all reductions performed in a
+fixed, sorted order so floating-point addition is associative-stable; (iv) no wall-clock or
+uninitialized state enters the update; (v) where cross-hardware reproducibility is needed,
+fixed-point or a fixed float evaluation order is mandated. Under these, identical inputs yield
+identical settled states on every run and machine.
+
+\section{Validated corrections to the discrete realization}\label{sec:corrections}
+
+R1--R4 (\S\ref{sec:experiments}) were executed on a dependency-free headless prototype after
+v0.1. Four corrections emerged that are now \emph{normative}: an implementation that ignores
+them reproduces the failures we measured. The continuum theory required no change; every
+correction concerns how the theory is realized discretely.
+
+\begin{enumerate}[leftmargin=2.2em,label=\textbf{C\arabic*.}]
+  \item \textbf{Non-penetration is stiff for every material.} Constraints partition into
+  \emph{material} constraints (cohesion, turgor, shape-matching), whose compliance is set from
+  viscosity by \eqref{eq:alpha}, and \emph{topological} constraints (inter-region contact,
+  container walls), whose compliance is always near zero. Softness lives in internal
+  deformation, never in whether matter may interpenetrate. Scaling contact compliance by
+  material softness --- v0.1's implied uniform reading of \eqref{eq:alpha} --- jams the solve.
+  \item \textbf{``Overdamped'' means little carried momentum.} The predictor carries a small
+  fraction $c\approx0.2$ of velocity, and body/layout forces enter as quasi-static
+  displacements. Carrying most of the velocity (heavy \emph{per-frame damping} of an otherwise
+  inertial integrator) is under-damped in effect: measured, it produced exact deterministic
+  limit cycles --- perpetual slosh with the strain-rate readout frozen at a constant --- rather
+  than convergence to rest.
+  \item \textbf{Thixotropy is load-bearing, not decorative.} A frictionless frustrated packing
+  creeps forever; no tuning of damping alone arrests it. The $\xi$ kinetics of \eqref{eq:thixo}
+  --- structure rebuilding at rest, raising the effective yield until sub-yield creep is
+  arrested --- \emph{is} the physical settle. The metaphor turned out to be the mechanism. Its
+  full discrete form is the arrest mechanism of \S\ref{sec:arrest}.
+  \item \textbf{Initial conditions are part of the contract.} Near-solution seeding (jittered
+  lattice; spatially spread injection) settles fast and cleanly; pathological seeding (deeply
+  interpenetrating spawn, jammed clump) costs an order of magnitude in settle time or worse.
+  Spawn placement is a normative part of the injection operator, not a cosmetic choice.
+\end{enumerate}
+
+\section{The arrest mechanism: how ``settled'' becomes exact}\label{sec:arrest}
+
+v0.1 defined settling by threshold \eqref{eq:settled} over the smooth, Papanastasiou-regularized
+law. Validation exposed a gap: the regularized law is correct for the \emph{flowing} branch, but
+a smooth law alone never produces \emph{exact} rest in a discrete solver --- gravity re-injects
+displacement every tick, Gauss--Seidel projection cancels it imperfectly, and the residual holds
+the medium in measurable perpetual micro-motion. The rigid branch of a yield-stress material
+must be realized \emph{exactly}. Three interlocking mechanisms do so; all three were forced by
+measured failures, and all three are direct discrete realizations of the constitutive model.
+
+\subsection{Yield deadband: the no-flow branch}
+Below yield, a Bingham-class material does not flow at all; it sustains the stress elastically.
+Discretely: after constraint projection, a point whose realized step speed falls below the
+local yield velocity is \emph{reverted to its pre-step position},
+\begin{equation}
+\norm{\mathbf{x}^{p}_i-\mathbf{x}_i}/\dt \;<\; v_y(S,\xi)
+\;\;\Longrightarrow\;\;
+\mathbf{x}^{p}_i \gets \mathbf{x}_i,
+\qquad
+v_y(S,\xi)\;=\;v_0\,\big(1+c_\xi\,\xi\big)\,h\!\big(\tau_y(S)\big),
+\label{eq:deadband}
+\end{equation}
+with $h$ monotone increasing. The material \emph{holds the residual sub-yield stress at rest}
+--- small unresolved constraint violations persist as internal prestress, exactly as a physical
+yield-stress medium sustains stress below $\tau_y$. Because $v_y$ grows with $\tau_y(S)$, the
+solidity dial \emph{is} the yield: low $S$ pours, mid $S$ is paste, $S\to1$ recovers the lock as
+the deadband diverges --- consistent with \eqref{eq:alpha}, now from the flow side as well.
+
+\subsection{Structure ratchet: thixotropy closing the loop}
+The deadband alone leaves a band of slow creep just above $v_y$. The $\xi$ kinetics
+\eqref{eq:thixo} close it: $\xi$ multiplies the yield in \eqref{eq:dualrate} and the deadband in
+\eqref{eq:deadband}, so matter that slows \emph{gains} yield and is ratcheted to a full stop,
+while matter under sustained shear keeps $\xi$ low and flows freely. This is hysteresis by
+construction --- the settled state is strictly harder to leave than to approach. One boundary
+condition is normative: while the containing frame itself accelerates (a slosh of the vessel;
+a drag of the whole canvas), the entire body is under shear and $\xi$ rebuild is suspended.
+
+\subsection{Jamming latch: caged rattle is rest}
+A discrete element deep in a jammed packing can rattle indefinitely between neighbours ---
+per-tick corrections above $v_y$ with zero net transport --- re-agitating its surroundings and
+preventing convergence (measured as settled-state flicker). Granular physics names this state:
+the element is \emph{caged}, and a caged element is macroscopically at rest. Discretely: if
+$\mathbf{x}_i$ has remained within radius $r_{\text{cage}}$ of an anchor for time
+$T_{\text{cage}}$, set $\xi_i=1$ and cease body-force injection for $i$; remaining constraint
+corrections then relax monotonically (nothing re-excites them). The latch is held while the
+cage condition holds and releases the moment the element genuinely leaves its cage. With
+deadband, ratchet, and latch together, the measured settled state is exact
+($\norm{\rate}_\infty=0$) and stable (zero flicker over sustained observation).
+
+\subsection{Honest strain measurement}
+The settle predicate \eqref{eq:settled} is meaningful only if $\rate$ is measured on
+\emph{realized} displacement, i.e.\ $\norm{(\mathbf{x}'-\mathbf{x})/\dt}$ evaluated
+\emph{after} the arrest phase, and never on a damped or zeroed velocity variable. Validation caught an
+instrument that reported \emph{settled} while matter still moved (velocity zeroed by an arrest
+rule, positions still advancing under body force). The strain readout is part of the product's
+truthfulness, and Invariant~4 is sharpened accordingly (\S\ref{sec:invariants}).
+
+\subsection{Disturbances must be physical}
+Under the overdamped predictor (C2), a velocity impulse decays by factor $c$ per tick --- dead
+in $\mathcal{O}(1)$ frames, invisible. Admissible disturbances are therefore the physical ones:
+\emph{sustained body force} (accelerating the containing frame --- a slosh) and \emph{direct
+displacement} (matter moved under the pointer, with local $\xi$ destroyed by the imposed
+shear). Both re-fluidize through the constitutive law itself; neither requires, nor permits, an
+animation-system side channel (Invariant~6).
+
+\begin{algorithm}[H]
+\SetAlgoLined\DontPrintSemicolon
+\KwIn{pre-step $\mathbf{x}$, post-projection $\mathbf{x}^{p}$, structure $\xi$, fields $(S,\dots)$}
+\ForEach{point $i$}{
+  $s_i \gets \norm{\mathbf{x}^{p}_i-\mathbf{x}_i}/\dt$\;
+  \lIf{$s_i < v_y(S_i,\xi_i)$ \eqref{eq:deadband}}{$\mathbf{x}^{p}_i \gets \mathbf{x}_i$;\; $s_i \gets 0$}
+  update $\xi_i$ by \eqref{eq:thixo} with $\rate=s_i$ (rebuild suspended while frame accelerates)\;
+  \lIf{$i$ caged ($\norm{\mathbf{x}^{p}_i-\mathbf{a}_i}<r_{\text{cage}}$ for $T_{\text{cage}}$)}{$\xi_i \gets 1$}
+  \lElse{\If{$\norm{\mathbf{x}^{p}_i-\mathbf{a}_i}\ge r_{\text{cage}}$}{reset anchor $\mathbf{a}_i \gets \mathbf{x}^{p}_i$}}
+}
+report $\norm{\rate_{\text{realized}}}_\infty = \max_i s_i$ \tcp*{honest strain: post-arrest only}
+\caption{Arrest phase (per tick, after constraint projection)}\label{alg:arrest}
+\end{algorithm}
+
+\section{Genetic axis: identity and expression}\label{sec:genetic}
+
+\subsection{Genome, germline, sequencing}
+A cell carries a \emph{genome} $\Gnome$, a set of typed \emph{traits} (capability tokens such as
+\texttt{tabular}, \texttt{temporal}, \texttt{media:video}, \texttt{numeric-range}). Every cell
+is born with a \emph{germline} $\Gnome_0$ expressing primitive phenotypes (bare panel, container,
+control surface); \textbf{there is no empty cell}, only a cell whose genome is $\Gnome_0$. This
+removes any special case for ``empty'' and makes the shipped default UI the same substance as
+user-created UI. Absorbing an asset \emph{adds} genes:
+\begin{equation}
+\seq : \text{Bytes} \to 2^{\text{Trait}}, \qquad
+\Gnome \;\gets\; \Gnome \,\cup\, \seq(\text{asset}).
+\end{equation}
+$\seq$ is a pure function: MIME/structure/column-type detection in, trait-set out. No physics,
+no ambiguity, fully testable.
+
+\subsection{Expression as a deterministic registry map}
+Phenotype is a deterministic function of genome through an extensible registry $\R$, a
+partial map from trait signatures to phenotype constructors:
+\begin{equation}
+\Phe \;=\; \express(\Gnome) \;=\; \compose\big\{\,\R(\sig)\;:\;\sig\in\text{signatures}(\Gnome)\,\big\}.
+\end{equation}
+A tabular genome expresses a chart phenotype; a video genome expresses a player phenotype.
+Extensibility is the whole plug-and-play claim made concrete: a new data type is a new entry in
+$\R$, added \emph{without touching the core} (experiment R4). Expression is deterministic ---
+there is no stochastic or mutation operator anywhere in the model.
+
+\subsection{Operations reduced to mechanism}
+Per Invariant~7, each biological term is admitted only after reduction to a defined mechanism.
+
+\begin{algorithm}[H]
+\SetAlgoLined\DontPrintSemicolon
+\textbf{Injection} $\inject(\text{cell},\text{asset})$:\;
+$\Gnome \gets \Gnome \cup \seq(\text{asset})$;\quad $\Phe \gets \express(\Gnome)$\;
+set assimilation field $D$ on the new boundary; rheology renders the blend via \eqref{eq:diffuse}\;
+\vspace{0.4em}
+\textbf{Mitosis} $\mitose(\text{cell})$:\;
+$\Gnome_{\text{child}} \gets \textsc{deep-copy}(\Gnome_{\text{parent}})$ \tcp*{identity copied}
+child inherits \textbf{no} position or settled geometry\;
+$\Phe_{\text{child}} \gets \express(\Gnome_{\text{child}})$; child re-settles under its own local pressure\;
+division visual = one mass pinching in two under interface tension (free from \S\ref{sec:energy})\;
+\vspace{0.4em}
+\textbf{Binding} $\bind(A,B)$ \tcp*{deliberate, deterministic}
+on the marked shared interface: $\Gnome_A \gets \Gnome_A \cup \tau(\Gnome_B)$, $\tau$ a
+deterministic (possibly partial) transfer\;
+adjacency alone \textbf{never} triggers this\;
+\caption{Genetic operators}
+\end{algorithm}
+
+\note{Mitosis is not ``make a copy.'' Taken literally it is genome replication plus independent
+re-expression: a duplicated chart dropped into a cramped corner settles compact while its parent
+stays wide --- same genotype, different phenotype-in-context. The naive ``duplicate'' verb would
+have hidden this correct behaviour.}
+
+\subsection{The unified boundary operator}\label{sec:boundary}
+A boundary between two cells carries two \emph{decoupled} coefficients:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Coefficient & Governs & Default \\
+\midrule
+$D$ (material diffusion) & do the regions blend physical material & always $>0$ (one medium) \\
+$\bind$ (gene transfer) & do the regions exchange genome & \textbf{off}; opt-in only \\
+\bottomrule
+\end{tabular}
+\end{center}
+This preserves the elegance of ``one interface, two jobs'' while ensuring physical proximity
+during settling never forces genetic fusion. Symbiotic binding is precisely the deliberate act of
+engaging the second coefficient. There is no ambient, proximity-driven, or random gene exchange:
+such behaviour would violate determinism (R2) and Invariant~7 and is explicitly excluded.
+
+\section{The agent interface: declarative grammar and token economy}\label{sec:agent}
+
+The end goal is an interface an LLM/agent emits cheaply. An agent declares \emph{material intent
+and containment}, not coordinates; the solver produces and maintains geometry. The grammar has
+two verb families --- rheological and genetic --- over one region model.
+
+\begin{lstlisting}[language=]
+program    := { region | op } ;
+region     := "cell" id "{" material content "}" ;
+material   := "S:" num "n:" num "xi:" num "D:" num [ "skin:" id ] ;
+content    := "hold" asset-ref | "germline" ;
+op         := "inject" id asset-ref
+            | "solidity" mask num          // t1/t2/t3 all reduce here
+            | "mitose" id
+            | "bind" id id
+            | "contain" id "in" region-ref ;
+mask       := "all" | id | "not" id ;      // whole / selection / complement
+\end{lstlisting}
+
+\noindent\textbf{Worked example (dashboard).} An agent asks for a wide revenue panel that fills
+remaining space with three cohesive KPI cells grouped beside it:
+
+\begin{lstlisting}[language=]
+cell main    { S:0.3 n:0.8 xi:1 D:0.6  hold revenue.csv }   // expresses -> chart
+cell k1      { S:0.5 n:0.8 xi:1 D:0.4  hold kpi1 }
+cell k2      { S:0.5 n:0.8 xi:1 D:0.4  hold kpi2 }
+cell k3      { S:0.5 n:0.8 xi:1 D:0.4  hold kpi3 }
+bind k1 k2 ; bind k2 k3                                      // cohesive group
+contain { main k1 k2 k3 } in viewport
+\end{lstlisting}
+
+No coordinates appear. Positions, sizes, the chart type, and the group packing are \emph{solved}.
+When \texttt{revenue.csv} changes or the viewport resizes, the medium re-settles with \emph{no
+further agent call} --- the zero-cost-adaptation claim. The economic argument is therefore not
+merely fewer tokens at generation ($\mathcal{O}(\text{dials}+\text{containment})$ versus
+$\mathcal{O}(\text{explicit geometry})$) but the elimination of the re-authoring round-trip on
+every change.
+
+\note{v0.2 status: measured. R3 (\S\ref{sec:experiments}) tokenized the three reference
+layouts with the cl100k\_base tokenizer: 68 / 47 / 52 tokens --- all under the
+80-token criterion --- and $2.43\times$ cheaper overall than equivalent compact markup for
+the same layout intent. The measured saving is the \emph{floor}; the structural claim ---
+zero re-authoring on change --- is additional.}
+
+\section{Invariants as executable specification}\label{sec:invariants}
+
+Anti-drift is enforced by artifacts, not intentions. Each invariant is stated as a predicate that
+becomes an automated acceptance test; a build that fails any is, by definition, drift.
+
+\begin{enumerate}[leftmargin=1.8em,label=\textbf{I\arabic*.}]
+  \item \textbf{No authored positions.} No code path assigns a coordinate directly; every position
+  is a solver output. \emph{Test:} static check + perturbation test (positions change iff material
+  state changes).
+  \item \textbf{Real constitutive law.} $\eta_{\text{app}}$ is evaluated per frame from
+  \eqref{eq:etaapp}; changing $n$ at runtime changes observed behaviour. \emph{Test:} sweep $n$,
+  assert response monotonicity; assert no easing/spring preset in the motion path.
+  \item \textbf{Locks are solidity.} No boolean lock flag; all locking flows through
+  \texttt{set\_solidity}. \emph{Test:} grep/AST for lock special-casing returns empty; $S=1$ region
+  is unyielding under bounded input.
+  \item \textbf{Threshold-terminated settling, honestly measured} (sharpened in v0.2).
+  Settling ends by \eqref{eq:settled}, never by a timer, and the strain rate in the predicate is
+  the \emph{realized post-arrest displacement rate} (\S\ref{sec:arrest}) --- never a damped or
+  zeroed velocity variable. \emph{Test:} varying content mass changes settle time; no duration
+  constant gates it; an instrumented run must show the settled state is exact and flicker-free
+  over a sustained observation window, and must show non-zero strain whenever positions change.
+  \item \textbf{One medium.} No component owns private layout logic outside the solver. \emph{Test:}
+  removing a component type does not remove any layout code path.
+  \item \textbf{No animation system.} The renderer is a stateless view of solver state; no tweens,
+  timelines, or durations exist. \emph{Test:} freezing the solver freezes all on-screen motion
+  exactly.
+  \item \textbf{Metaphor reduces to mechanism.} Every biological term in the codebase maps to a
+  defined operator (\S\ref{sec:genetic}); expression and all operators are deterministic.
+  \emph{Test:} R2 bit-identity holds; no stochastic call in the genetic path.
+\end{enumerate}
+
+\subsection{Tool primitives}\label{sec:tools}
+The three authoring tools are not three features; they are three masks over one primitive:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Tool & Meaning & Reduction \\
+\midrule
+\texttt{slime-lock} (t1) & lock whole UI solid & \texttt{set\_solidity(all, 1)} \\
+\texttt{window-lock} (t2) & lock a selected area (inside frozen) & \texttt{set\_solidity(sel, 1)} \\
+\texttt{isolation} (t3) & work inside a region (outside frozen) & \texttt{set\_solidity(not sel, 1)} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Partial locks ($S=0.8$: stiff but yielding to determined force) and soft gradient lock edges fall
+out for free, since $S$ is a continuous field.
+
+\section{Proof-of-concept plan: designed experiments}\label{sec:experiments}
+
+Theory was frozen at v0.1; the four experiments below were then executed on a
+dependency-free headless Rust prototype (std-only, single-threaded for determinism by
+construction, \S\ref{sec:determinism}). \textbf{All four passed.} Exit criteria are restated
+with measured results.
+
+\begin{center}
+\begin{tabular}{@{}p{0.06\linewidth}p{0.40\linewidth}p{0.46\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Question} & \textbf{Exit criterion} \\
+\midrule
+R1 & Discretization: does XPBD (\S\ref{sec:xpbd}) settle at real-time scale? &
+\textbf{PASS.} 50 regions (1250 particles) settle at 1.2--1.4\,ms/frame (budget 16); scaling
+holds to 400 regions / 10\,000 particles at 11.8\,ms. The four corrections of
+\S\ref{sec:corrections} were discovered here. \\
+R2 & Determinism (\S\ref{sec:determinism}). &
+\textbf{PASS} (within machine). 100 independent settle runs bit-identical (FNV-1a
+\texttt{0xdb5295e7d7bce689}); identical across separate process invocations. The two-machine
+clause remains untested (\S\ref{sec:limits}). \\
+R3 & Agent grammar / token economy (\S\ref{sec:agent}). &
+\textbf{PASS.} Grammar lowers end-to-end to the R1 solver (parse $\to$ settle $\to$ hash), so
+``settles unambiguously'' is demonstrated, not asserted. Dashboard/article/settings: 68/47/52
+tokens (cl100k\_base), all $<80$; $2.43\times$ cheaper than equivalent compact markup. \\
+R4 & Expression registry (\S\ref{sec:genetic}). &
+\textbf{PASS.} CSV$\to$chart, MP4$\to$player, TXT$\to$reader; a fourth type (PNG$\to$image
+viewer) added through the public registry with the core untouched --- both detection and
+expression are registry-driven, so ``no core change'' is structural. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The full suite is 15 automated tests (rheology, invariants, grammar, genetics),
+all green; the packaged crate rebuilds standalone and reproduces identical hashes.
+
+\medskip
+\noindent\textbf{Corroboration --- workstream B visual bench.} Separately from the headless
+gates, a browser-based fluid-in-vessel bench (one Herschel--Bulkley medium poured into a bowl,
+rendered as a single implicit surface) exercised the full arrest mechanism of \S\ref{sec:arrest}
+under instrumented observation: pours settle in $\sim$4--5\,s to \emph{exact} zero strain; a
+vessel slosh visibly surges and re-settles in under a second; at 1200 particles the settled
+state showed \emph{zero} flicker over a 10\,s observation window at 8--11\,ms/frame. Its first
+version --- discrete glowing regions that never took the vessel's shape --- was rejected as
+contradicting the continuum thesis and is retained in the project record as the canonical
+example of the drift Invariants 1--6 exist to catch; the rebuilt bench was verified by
+screenshot capture and programmatic image analysis (single connected component spanning the
+vessel in every state). The bench illustrates; the crate remains the reference of record.
+
+\medskip
+\noindent\textbf{Deferred by design} (stage-5 questions, excluded to prevent scope drift):
+OS integration, multi-user editing, CSS interop, and performance beyond the measured scale.
+Pipeline position: specification $\rightarrow$ R1--R4 prototype \emph{(done)} $\rightarrow$
+visual demo \emph{(done)} $\rightarrow$ agent-facing API (workstream A, the goal) $\rightarrow$
+integration.
+
+\section{Limitations and threats to validity}\label{sec:limits}
+
+We state these plainly; a PoC that hides them is not professional.
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Prototype scale, not product scale.} R1--R4 validate the discrete realization on
+  a headless prototype (5$\times$5-particle region blobs, no true rigid content inclusions yet).
+  $E_{\text{content}}$ shape-matching and the inclusion pipeline remain specified but unexercised.
+  \item \textbf{Parameters are tuned, not derived.} The measured operating point ($N_{\text{solve}}$,
+  carry $c$, deadband constants $v_0, c_\xi$, cage constants $r_{\text{cage}}, T_{\text{cage}}$,
+  regularization $m$) was reached by instrumented iteration against the exit criteria. The
+  corrections of \S\ref{sec:corrections} are qualitative and forced; the constants are not.
+  \item \textbf{Cross-hardware float determinism remains untested.} R2 passed within one machine
+  and across processes; \eqref{eq:xpbd} over IEEE floats can still diverge across architectures,
+  and the two-machine clause may force fixed-point with unquantified cost.
+  \item \textbf{Token economy is measured narrowly.} $2.43\times$ on three layouts against
+  compact equivalent markup, with both sides using their own defaults. Layouts demanding genuine
+  explicit control may narrow the advantage; the zero-re-authoring claim, while structural, is
+  not yet quantified in tokens saved over a session.
+  \item \textbf{The visual bench is an illustration.} Its fluid dynamics (gravity magnitude,
+  deadband base) are tuned for a vessel-filling demonstration and differ numerically from the
+  crate. Constitutive \emph{form} is shared; constants are not. The crate is the reference.
+  \item \textbf{Accessibility is an open design, but a favourable one.} A continuous medium has no
+  DOM semantics for assistive tech --- however, the \emph{genome} is a clean semantic layer
+  (traits and expressed phenotype), arguably a better accessibility source than inferred box
+  structure. This must be designed, not assumed.
+  \item \textbf{Continuum cost at scale.} Measured to 10\,000 particles single-threaded; very
+  large interfaces beyond this are unaddressed and deliberately deferred.
+\end{itemize}
+
+\section{Conclusion}
+
+NNUI\_CELL proposes a single structural break --- \emph{replace the box model with a continuum
+field} --- and supplies the two mechanisms that make a continuum both movable and addressable: a
+solidity-modulated, rate-dependent-yield Herschel--Bulkley rheology that settles by energy
+minimization and locks at the top of one dial, and a deterministic genotype$\rightarrow$phenotype
+expression layer that lets a region digest and manifest arbitrary data. The two axes meet at one
+interface primitive with decoupled physical and genetic coupling, so proximity never forces
+fusion and every biological term reduces to a defined, non-stochastic mechanism. The design is
+pinned against reductive drift by seven executable invariants. v0.1 stated its open questions as
+four designed experiments; v0.2 reports all four passed, and folds what implementation forced
+--- stiff topology, an overdamped quasi-static integrator, and above all the arrest mechanism
+that makes ``settled'' an exact, honestly measured, thixotropically latched state --- back into
+the specification as normative. The theory did not change under contact with implementation; its
+discrete realization sharpened. What remains is not validation but construction: the
+agent-facing API that is the point of the system.
+
+\vspace{1em}
+\noindent\textcolor{rule}{\rule{\linewidth}{0.8pt}}
+\vspace{0.4em}
+
+\noindent{\small \textit{MIVIM Development --- Standards in Novel Design.} Specification
+v0.2 (post-validation revision), July 2026; supersedes v0.1. Technical architecture developed in
+an AI-assisted research collaboration; all design authority and creative direction held by the
+author. R1--R4 results reported herein were produced by the accompanying headless prototype
+crate and are reproducible from its shipped sources.}
+
+\appendix
+\section{Symbol and dial reference}
+
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Meaning & Role \\
+\midrule
+$S\in[0,1)$ & solidity field & dial: liquid$\to$locked; per point \\
+$n$ & flow index & dial: post-yield thinning ($<1$) / thickening ($>1$) \\
+$\xi\in[0,1]$ & thixotropic structure & state: erodes under shear, rebuilds at rest \\
+$T_r$ & rebuild timescale & dial: ``ooze'' / settle speed \\
+$D$ & assimilation coefficient & dial: melt-in ($>0$) vs.\ island ($0$); per interface \\
+$q,\rate_c$ & hardening exponent, critical rate & tune fast-flick rigidity \\
+$\kappa,\beta$ & yield shaping, consistency gain & calibrate the $S$ curve \\
+$w_f,w_c,w_r$ & energy weights & fill vs.\ cohesion vs.\ content rigidity \\
+$\varepsilon_{\text{settle}}$ & strain-rate threshold & defines ``settled'' \\
+$\alpha_j,\tilde{\alpha}_j$ & XPBD compliance & from $\eta_{\text{app}}$; material only (C1) \\
+$c$ & momentum carry & predictor carry, $\approx0.2$ (C2) \\
+$v_0, c_\xi$ & deadband base, ratchet gain & yield deadband $v_y$, \eqref{eq:deadband} \\
+$r_{\text{cage}}, T_{\text{cage}}$ & cage radius, cage time & jamming latch (\S\ref{sec:arrest}) \\
+$\Gnome,\Gnome_0,\Phe$ & genome, germline, phenotype & genetic state \\
+$\R$ & expression registry & extensible trait$\to$phenotype map \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The full per-point material state is $\{S,n,\xi,\text{skin}\}$; the per-interface state
+is $\{D,\bind\}$. This compactness is the token-economy argument: a handful of scalars and a
+containment relation describe what box markup approximates in hundreds of declarations.
+
+\end{document}

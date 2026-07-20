@@ -17,7 +17,7 @@ design, so R2 determinism is not at the mercy of any external crate.
 
 ## Results (reproduced from `R1R2_REPORT.txt`)
 
-```
+```bash
 config: 50 regions x 5x5 = 1250 particles, container 60x52
 
 R1  steady-state cost: 1.36 ms/frame   (budget 16.0)      => PASS
@@ -55,6 +55,7 @@ tweens, no timelines). The Rust crate remains the reference of record; this is
 workstream B, a demo, explicitly not the end goal.
 
 What it shows, all solver-driven:
+
 - **Scatter & settle** — regions ooze from a jittered start and settle; the
   strain-rate meter drains to zero and `STATE` flips `OOZING → SETTLED`, which is
   literally the settle predicate crossing threshold.
@@ -77,7 +78,7 @@ The grammar is parsed and **lowered into the R1 solver**, so "settles
 unambiguously" is shown end-to-end (parse → build World → settle → hash), not
 asserted. Token cost is measured with a real LLM tokenizer.
 
-```
+```bash
 settle (parse -> World -> settle -> hash, x2 must match):
   dashboard  4 cells  settled@255  hash 0x2cc3b2c865f4e8ea  reproducible PASS
   article    3 cells  settled@162  hash 0x2e48ae36d2999efa  reproducible PASS
@@ -105,7 +106,7 @@ because geometry is solved, not authored — is structural and not counted here.
 Three data types sequence to distinct phenotypes; a fourth is added through the
 public registry with the core untouched.
 
-```
+```bash
 CSV -> traits[numeric,tabular]   -> phenotype 'chart'        (axis/aggregate/sort/filter)
 MP4 -> traits[temporal,video]    -> phenotype 'player'       (play/scrub/volume/fullscreen)
 TXT -> traits[prose,text]        -> phenotype 'reader'       (scroll/font-size/find)
@@ -137,13 +138,13 @@ Open `demo/nnui_cell_bench.html` in a browser for the visual bench (workstream B
 
 All pass. These convert anti-drift intent (paper §8) into automated checks:
 
-| Test | Invariant | What it asserts |
-|------|-----------|-----------------|
-| `i2_constitutive_law_is_real` | I2 | flow index `n` changes apparent viscosity; higher solidity `S` monotonically lowers compliance (stiffer) |
-| `i3_locked_region_holds_still` | I3 | a near-locked (`S≈1`) isolated region does not drift — locking is the `S→1` limit, not a flag |
-| `i4_settling_reaches_threshold` | I4 | settling terminates by the strain-rate threshold, and actually reaches it |
-| `r2_bit_identical_determinism` | I7 / R2 | 20 independent settles produce identical state hashes |
-| `confinement_holds` | — | every particle stays inside the container through settling |
+| Test                            | Invariant | What it asserts                                                                                          |
+|---------------------------------|-----------|----------------------------------------------------------------------------------------------------------|
+| `i2_constitutive_law_is_real`   | I2        | flow index `n` changes apparent viscosity; higher solidity `S` monotonically lowers compliance (stiffer) |
+| `i3_locked_region_holds_still`  | I3        | a near-locked (`S≈1`) isolated region does not drift — locking is the `S→1` limit, not a flag            |
+| `i4_settling_reaches_threshold` | I4        | settling terminates by the strain-rate threshold, and actually reaches it                                |
+| `r2_bit_identical_determinism`  | I7 / R2   | 20 independent settles produce identical state hashes                                                    |
+| `confinement_holds`             | —         | every particle stays inside the container through settling                                               |
 
 Plus four `rheology` unit tests: yield diverges as `S→1`, compliance → 0 when
 locked, `n` changes behaviour, structure `ξ` rebuilds at rest.
@@ -206,7 +207,7 @@ of the spec carries them.
 
 ## File manifest
 
-```
+```bash
 Cargo.toml            crate manifest (release profile tuned for determinism)
 src/vec2.rs           deterministic 2D f64 vector math
 src/rheology.rs       constitutive law + viscosity→compliance + thixotropy
