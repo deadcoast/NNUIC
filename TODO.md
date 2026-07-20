@@ -116,9 +116,16 @@ the previous binary exit has passed [REQ11].
   before the fix), and the VG03 instrument gate asserting geometry-moved ⇔
   strain-nonzero both directions on every frame of a full settle. 25/25
   tests green.
-- [ ] [TK12] M3 — LLM drive: at least three novel natural-language intents
+- [x] [TK12] M3 — LLM drive: at least three novel natural-language intents
   produce valid programs that settle with zero authored coordinates; token
-  counts recorded against the R3 baseline [REQ06], [REQ11].
+  counts recorded against the R3 baseline [REQ06], [REQ11]. Done: three
+  novel intents (kanban, gallery, chat) emitted as grammar by the LLM
+  under test (Claude/Fable 5), each settling deterministically through the
+  public API; doctored-coordinate variants rejected at parse. Tokens
+  (cl100k_base): 47/81/56, aggregate 15.3 tok/cell vs baseline 16.7 —
+  better per-cell economy; gallery's 81 exceeds R3's per-layout bar
+  because it carries 5 cells (recorded honestly; per-cell is the
+  scale-fair figure). Report: `engine/reports/M3_TOKENS.txt`. 27/27 green.
 - [ ] [TK13] M4 — portability: a cell serialized from layout A injected into
   layout B re-expresses and re-settles bit-identically; the wire format
   carries no geometry [REQ07], [REQ08], [REQ11].

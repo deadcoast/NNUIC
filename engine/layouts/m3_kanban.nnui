@@ -1,0 +1,7 @@
+cell head { S:0.6 hold title }
+cell todo { hold backlog }
+cell doing { hold active }
+cell done { hold finished }
+bind todo doing
+bind doing done
+contain { head todo doing done } in viewport

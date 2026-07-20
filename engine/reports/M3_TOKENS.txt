@@ -1,0 +1,13 @@
+M3 token economy (cl100k_base), novel LLM-emitted layouts:
+  layout     tokens  cells  tok/cell
+  kanban         47      4      11.8
+  gallery        81      5      16.2
+  chat           56      3      18.7
+  TOTAL         184     12      15.3
+
+R3 baseline:
+  layout     tokens  cells  tok/cell
+  dashboard      68      4      17.0
+  article        47      3      15.7
+  settings       52      3      17.3
+  TOTAL         167     10      16.7

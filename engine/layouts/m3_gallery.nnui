@@ -1,0 +1,9 @@
+cell main { S:0.3 n:0.7 hold film }
+cell t1 { hold c1 }
+cell t2 { hold c2 }
+cell t3 { hold c3 }
+cell t4 { hold c4 }
+bind t1 t2
+bind t2 t3
+bind t3 t4
+contain { main t1 t2 t3 t4 } in viewport

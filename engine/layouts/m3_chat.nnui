@@ -1,0 +1,5 @@
+cell sidebar { S:0.7 D:0.2 hold convos }
+cell pane { S:0.3 n:0.7 hold transcript }
+cell composer { hold draft }
+solidity composer 0.9
+contain { sidebar pane composer } in viewport

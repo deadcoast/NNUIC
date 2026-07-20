@@ -450,3 +450,27 @@ Completed the read path per D09 §4 (TK11), with a four-test M2 harness:
 
 **25/25 tests green.** M2 exit met: an agent obtains settled geometry and
 detects settlement purely by consuming events from a tick loop.
+
+## 2026-07-20: 017 — Milestone M3 passed: LLM drive
+
+Three novel natural-language intents — a kanban board, a media gallery, a
+chat app (disjoint from the R3 reference set) — emitted as grammar by the
+LLM under test (Claude / Fable 5, the master-developer model itself), then
+verified end-to-end by the M3 harness:
+
+- Every emitted program parses, validates, and settles bit-identically
+  through the public API; every cell reports settled.
+- Zero authored coordinates, proven structurally: the same programs with
+  coordinates doctored in are rejected at parse (the grammar cannot
+  represent the offense).
+- Token economy (cl100k_base): kanban 47, gallery 81, chat 56 — aggregate
+  **15.3 tokens/cell vs the R3 baseline's 16.7** (novel emissions beat the
+  reference set per cell). Honest notes: the first gallery emission was
+  101 tokens because the model redundantly declared default dials — the
+  grammar's elided-defaults economy did the trimming; gallery's final 81
+  sits over R3's per-layout 80 bar because it carries five cells, and the
+  per-cell figure is the scale-fair comparison (M3's exit requires counts
+  recorded against the baseline, and they are:
+  `engine/reports/M3_TOKENS.txt`).
+
+**27/27 tests green.** Next: M4 — serialization and portability (TK13).
