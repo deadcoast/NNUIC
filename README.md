@@ -90,7 +90,16 @@ settles to exact zero strain with zero flicker (verified by screenshot
 capture and programmatic image analysis).
 
 **Pipeline position:** specification → R1–R4 prototype *(done)* → visual demo
-*(done)* → **agent-facing API (workstream A — next)** → integration.
+*(done)* → agent-facing API, workstream A *(done — milestones M1–M4 passed,
+35/35 tests green, merge gates automated)* → **integration / demo on top**.
+
+Workstream A delivered the public engine (`engine/`): atomic grammar
+submission with enumerated error semantics, an event-driven read path with
+honest post-arrest strain, LLM-driven layout from natural-language intent
+(15.3 tokens/cell vs the 16.7 baseline), and portable geometry-free cell
+records that inject across layouts bit-identically. Building it forced the
+v0.2 arrest mechanism into the solver as normative code — settled states
+are now exact, stable, and five times faster to reach.
 
 **Honest limitations** (see paper §12): prototype scale only (no true rigid
 content inclusions yet); constants tuned, not derived; cross-hardware float

@@ -44,9 +44,11 @@ Real paths: [D01](latex/v0.2/NNUI_CELL_PoC_v0.2.tex),
 - [x] [TK02] Repair the [D07] package: fix the stale relative links that
   point outside this repository and align the template filename with its
   references, then regenerate the validator audit [REQ02].
-- [ ] [TK03] Keep the validator audit current: every MIVIM document added or
+- [x] [TK03] Keep the validator audit current: every MIVIM document added or
   edited re-runs link-completeness and lint, and its row is refreshed in
   [VALIDATE_WORKFLOW.json](.MIVIM/VALIDATE_WORKFLOW.json) [REQ02].
+  Automated: the audit tool lives at `.MIVIM/tools/mivim_audit.py` and the
+  pre-commit gate re-runs it on the doc family before every commit.
 
 ## (3) Stage 1: discovery [WL01]
 
@@ -126,9 +128,15 @@ the previous binary exit has passed [REQ11].
   better per-cell economy; gallery's 81 exceeds R3's per-layout bar
   because it carries 5 cells (recorded honestly; per-cell is the
   scale-fair figure). Report: `engine/reports/M3_TOKENS.txt`. 27/27 green.
-- [ ] [TK13] M4 — portability: a cell serialized from layout A injected into
+- [x] [TK13] M4 — portability: a cell serialized from layout A injected into
   layout B re-expresses and re-settles bit-identically; the wire format
-  carries no geometry [REQ07], [REQ08], [REQ11].
+  carries no geometry [REQ07], [REQ08], [REQ11]. Done: `CellRecord`
+  (grammar-carried, version-headed) with export/inject; six-test harness —
+  cross-layout injection bit-identical, VG02 whitelist by set equality
+  with geometry-bearing records rejected, binds do not travel, canonical
+  form is a fixpoint, position cannot leak (identically-declared cells at
+  different positions export identical records), duplicate injection
+  atomic. 33/33 tests green.
 
 ## (6) Stage 4: validation gates [WL05]
 
@@ -136,16 +144,52 @@ the previous binary exit has passed [REQ11].
 > Dependency: [DP06] — INVARIANT_SUITE
 > Requirement: [RQ06] — GATES_ARE_AUTOMATED
 
-- [ ] [TK14] Wire the seven-invariant suite as an automated merge gate on
+- [x] [TK14] Wire the seven-invariant suite as an automated merge gate on
   the `engine/` tree; a failing invariant is drift by definition [REQ10],
-  [REQ11].
-- [ ] [TK15] Add determinism-hash and frame-budget checks at the API
-  boundary to the same gate [REQ08], [REQ09].
-- [ ] [TK16] Re-run MIVIM validation on [D02] and [D08] after every edit;
+  [REQ11]. Done: `.githooks/pre-commit` (repo `core.hooksPath`) runs the
+  full 35-test engine suite before every commit.
+- [x] [TK15] Add determinism-hash and frame-budget checks at the API
+  boundary to the same gate [REQ08], [REQ09]. Done: `engine/tests/gates.rs`
+  — 50 regions inside 16 ms/frame during active settling, and repeated
+  submit→settle runs bit-identical at the API boundary.
+- [x] [TK16] Re-run MIVIM validation on [D02] and [D08] after every edit;
   keep the next milestone blocked while the prior exit is unmet [REQ02],
-  [REQ11].
+  [REQ11]. Done: the gate audits the doc family (link-completeness + lint)
+  on every commit; milestone order was held throughout — M1→M2→M3→M4 each
+  started only after the prior binary exit passed.
 
-## (7) Completion criteria [AC]
+## (7) Stage 5: integration demo [WL06]
+
+> Goal: [GL05] — BUILD_MILESTONES_IN_ORDER
+> Dependency: [DP05] — DESIGN_CONTRACTS
+> Requirement: [RQ05] — MILESTONE_ORDER_ENFORCED
+
+The harness-first condition (demo only after M1 and M2) is satisfied; the
+visible demo is unblocked. It consumes the public API only [REQ13] and
+ships nothing visual unverified [REQ14].
+
+- [x] [TK17] Design the demo: the real engine compiled to WASM
+  (dependency-free, hand-rolled glue — no new crates in the engine), a
+  stateless metaball renderer drawing only what `Snapshot` exposes
+  (centroid, hull, settled, strain, vessel map), and the M3 LLM-emitted
+  intents as the driving content [REQ13], [REQ03].
+- [x] [TK18] Build the demo: WASM wrapper crate + self-contained page —
+  intent text, emitted program, live settle with strain meter and settled
+  flag, layout selector across the four reference programs [REQ13],
+  [REQ06]. Done: `demo/` (195 KB wasm — the whole engine); renderer skips
+  repaint when state is unchanged (a stateless view of unchanged state).
+- [x] [TK19] Verify the demo the standing-rule way: rendered output
+  captured and checked programmatically (blob count, settle-to-zero,
+  settled flag) before it is called done [REQ14], [REQ11]. Done — and it
+  earned its keep twice: the first render drew discrete dots (the exact
+  analysis/003 drift; caught by looking, then encoded as a permanent
+  connectivity check: one connected component per cell, every centroid on
+  matter), and the flicker check exposed GPU raster nondeterminism
+  (fixed structurally: no repaint of unchanged state). Final: all four
+  layouts settle at ~300 ms, strain exactly 0, connected, frozen raster.
+  `demo/verify_demo.py` is the repeatable gate.
+
+## (8) Completion criteria [AC]
 
 > Goal: [GL07] — DEFINE_TASK_COMPLETION
 > Dependency: [DP07] — TASK_SET
@@ -154,7 +198,7 @@ the previous binary exit has passed [REQ11].
 This TODO is complete when:
 
 1. Every task carries at least one requirement marker.
-2. Every requirement REQ01 through REQ12 appears in at least one task.
+2. Every requirement REQ01 through REQ14 appears in at least one task.
 3. No build task (TK09 through TK13) started before Stage 2 completed and
    the prior milestone exit passed.
 4. Validation commands pass for [D02] and [D08], and the validator audit
@@ -168,15 +212,17 @@ below remains link-complete [LC], [LN].
 - Documents: [DOC], [D01], [D02], [D03], [D04], [D05], [D06], [D07],
   [D08], [D09]
 - Context and acceptance: [KN], [TK], [AC], [LC], [LN]
-- Workflow phases: [WL], [WL01], [WL03], [WL04], [WL05]
+- Workflow phases: [WL], [WL01], [WL03], [WL04], [WL05], [WL06]
 - Goals: [GL], [GL01], [GL02], [GL03], [GL04], [GL05], [GL06], [GL07]
 - Dependencies: [DP], [DP01], [DP02], [DP03], [DP04], [DP05], [DP06], [DP07]
 - Metadata requirements: [RQ], [RQ01], [RQ02], [RQ03], [RQ04], [RQ05],
   [RQ06], [RQ07]
 - Project requirements: [REQ], [REQ01], [REQ02], [REQ03], [REQ04], [REQ05],
-  [REQ06], [REQ07], [REQ08], [REQ09], [REQ10], [REQ11], [REQ12]
+  [REQ06], [REQ07], [REQ08], [REQ09], [REQ10], [REQ11], [REQ12], [REQ13],
+  [REQ14]
 - Tasks: [TK01], [TK02], [TK03], [TK04], [TK05], [TK06], [TK07], [TK08],
-  [TK09], [TK10], [TK11], [TK12], [TK13], [TK14], [TK15], [TK16]
+  [TK09], [TK10], [TK11], [TK12], [TK13], [TK14], [TK15], [TK16], [TK17],
+  [TK18], [TK19]
 
 ## (Z) Context-Citations
 
@@ -254,6 +300,10 @@ below remains link-complete [LC], [LN].
 [WL05]: VALIDATE
   "Automated gates: invariants, determinism hashes, frame budget, MIVIM
   validation."
+
+[WL06]: INTEGRATE_DEMO
+  "The integration stage: the visible agent-driven demo built on top of
+  the completed public API, unblocked by the harness-first condition."
 
 [GL]: GOAL
   "The intended outcome of a stage."
@@ -378,6 +428,14 @@ below remains link-complete [LC], [LN].
   "The first-consumer decision belongs to the creative lead and gates
   discovery."
 
+[REQ13]: API_ONLY_DEMO
+  "The demo drives layout exclusively through the public API and renders
+  only what Snapshot exposes; no private solver access."
+
+[REQ14]: VERIFIED_VISUALS
+  "Nothing visual ships without its rendered output captured and checked
+  programmatically first — the standing rule from the bench rejection."
+
 [TK01]: REFRESH_CLAUDE_MD_TASK
   "Task to bring CLAUDE.md in line with v0.2, the git repository, and the
   MIVIM contract."
@@ -434,3 +492,14 @@ below remains link-complete [LC], [LN].
 [TK16]: CONTINUOUS_VALIDATION_TASK
   "Task to re-validate the doc family after edits and hold milestone
   order."
+
+[TK17]: DEMO_DESIGN_TASK
+  "Task to fix the demo design: engine-in-WASM, snapshot-only stateless
+  renderer, M3 intents as content."
+
+[TK18]: DEMO_BUILD_TASK
+  "Task to build the WASM wrapper and the self-contained demo page."
+
+[TK19]: DEMO_VERIFY_TASK
+  "Task to verify the rendered demo programmatically before calling it
+  done."

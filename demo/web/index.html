@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NNUI_CELL — agent-driven layout demo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #070c0a; color: #cfe6dd;
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: 300px 1fr; height: 100vh;
+  }
+  aside {
+    padding: 18px; border-right: 1px solid #14231d; overflow-y: auto;
+    background: #0a1210;
+  }
+  h1 { font-size: 15px; letter-spacing: .12em; color: #3fd9a6; }
+  h1 small { display:block; color:#5f7c72; letter-spacing:.02em;
+    font-weight:400; margin-top:4px; }
+  .sect { margin-top: 16px; }
+  .sect b { font-size: 11px; letter-spacing: .14em; color: #5f7c72; }
+  button {
+    display: block; width: 100%; margin: 6px 0; padding: 8px 10px;
+    background: #0f1c17; color: #cfe6dd; border: 1px solid #1d3a2f;
+    border-radius: 6px; cursor: pointer; text-align: left; font: inherit;
+  }
+  button.active { border-color: #3fd9a6; color: #3fd9a6; }
+  #intent { font-style: italic; color: #9fc4b6; margin-top: 6px; }
+  pre {
+    margin-top: 6px; padding: 10px; background: #0d1714; color: #8fd9c0;
+    border: 1px solid #14231d; border-radius: 6px; font-size: 11.5px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  main { position: relative; }
+  canvas { width: 100%; height: 100%; display: block; }
+  #hud {
+    position: absolute; top: 14px; right: 14px; text-align: right;
+    background: rgba(7,12,10,.72); padding: 10px 14px; border-radius: 8px;
+    border: 1px solid #14231d;
+  }
+  #flag { font-weight: 700; letter-spacing: .12em; }
+  #flag.settled { color: #3fd9a6; }
+  #flag.oozing { color: #e8b24c; }
+  #meter { width: 160px; height: 5px; background: #12211b;
+    border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  #meterfill { height: 100%; width: 0%; background: #e8b24c; }
+  #stats { color: #5f7c72; font-size: 11.5px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>NNUI_CELL<small>agent-driven layout — the engine, live, via its
+  public API</small></h1>
+  <div class="sect"><b>AGENT INTENT</b><div id="intent"></div></div>
+  <div class="sect"><b>EMITTED PROGRAM</b><pre id="program"></pre></div>
+  <div class="sect"><b>LAYOUTS</b><div id="buttons"></div></div>
+  <div class="sect"><b>WHAT YOU ARE SEEING</b>
+  <pre>No coordinates exist in these programs.
+Every position is solved by the medium
+settling; the meter is the realized
+post-arrest strain. SETTLED means the
+jamming latch is engaged: exact rest,
+stable forever.</pre></div>
+</aside>
+<main>
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <div id="flag" class="oozing">LOADING</div>
+    <div id="meter"><div id="meterfill"></div></div>
+    <div id="stats"></div>
+  </div>
+</main>
+<script>
+"use strict";
+const CASES = [
+  { name: "dashboard",
+    intent: "A wide revenue panel that fills remaining space, with " +
+            "three cohesive KPI cells grouped beside it.",
+    src: `cell main { S:0.3 D:0.6 hold revenue }
+cell k1 { hold kpi1 }
+cell k2 { hold kpi2 }
+cell k3 { hold kpi3 }
+bind k1 k2
+bind k2 k3
+contain { main k1 k2 k3 } in viewport` },
+  { name: "kanban",
+    intent: "A kanban board: a slim header above three equally " +
+            "weighted columns that sit together as one group.",
+    src: `cell head { S:0.6 hold title }
+cell todo { hold backlog }
+cell doing { hold active }
+cell done { hold finished }
+bind todo doing
+bind doing done
+contain { head todo doing done } in viewport` },
+  { name: "gallery",
+    intent: "A media gallery: one large fluid featured player with a " +
+            "strip of four cohesive thumbnails alongside it.",
+    src: `cell main { S:0.3 n:0.7 hold film }
+cell t1 { hold c1 }
+cell t2 { hold c2 }
+cell t3 { hold c3 }
+cell t4 { hold c4 }
+bind t1 t2
+bind t2 t3
+bind t3 t4
+contain { main t1 t2 t3 t4 } in viewport` },
+  { name: "chat",
+    intent: "A chat app: a stiff sidebar that keeps to itself, a soft " +
+            "fluid transcript pane, and a near-locked composer bar.",
+    src: `cell sidebar { S:0.7 D:0.2 hold convos }
+cell pane { S:0.3 n:0.7 hold transcript }
+cell composer { hold draft }
+solidity composer 0.9
+contain { sidebar pane composer } in viewport` },
+];
+const PALETTE = [[63,217,166],[70,199,217],[232,178,76],[186,120,222],
+                 [95,225,205]];
+
+const cvs = document.getElementById("c");
+const ctx = cvs.getContext("2d");
+const off = document.createElement("canvas");
+const octx = off.getContext("2d");
+let wasm = null, nCells = 0, active = 0, tickCount = 0;
+
+function resize() {
+  cvs.width = cvs.clientWidth; cvs.height = cvs.clientHeight;
+  off.width = cvs.width; off.height = cvs.height;
+}
+window.addEventListener("resize", resize);
+
+function load(i) {
+  active = i;
+  const c = CASES[i];
+  document.getElementById("intent").textContent = "“" + c.intent + "”";
+  document.getElementById("program").textContent = c.src;
+  document.querySelectorAll("#buttons button").forEach((b, k) =>
+    b.classList.toggle("active", k === i));
+  nCells = wasm.demo_load(i, cvs.width, cvs.height);
+  tickCount = 0;
+}
+
+function readGeom() {
+  const len = wasm.demo_refresh_geom();
+  const f = new Float64Array(wasm.memory.buffer, wasm.demo_geom_ptr(), len);
+  let i = 0;
+  const scale = f[i++], ox = f[i++], oy = f[i++], n = f[i++];
+  const H = cvs.height;
+  const mx = x => x * scale + ox;
+  const my = y => H - (y * scale + oy);
+  const cells = [];
+  for (let k = 0; k < n; k++) {
+    const np = f[i++];
+    const cell = {
+      cx: mx(f[i++]), cy: my(f[i++]),
+      settled: f[i++] > 0.5, strain: f[i++], pts: [],
+    };
+    for (let p = 0; p < np; p++) {
+      const x = f[i++], y = f[i++];
+      cell.pts.push([mx(x), my(y)]);
+    }
+    cells.push(cell);
+  }
+  return cells;
+}
+
+function render(cells) {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  const bg = ctx.createLinearGradient(0, 0, 0, cvs.height);
+  bg.addColorStop(0, "#070c0a"); bg.addColorStop(1, "#0a1512");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, cvs.width, cvs.height);
+  octx.clearRect(0, 0, off.width, off.height);
+  // One CONNECTED blob per cell, by construction: the filled hull polygon
+  // plumped with a fat round-joined stroke. Never discrete dots — a cell
+  // is one piece of medium (the analysis/003 lesson).
+  const plump = Math.max(cvs.width, cvs.height) * 0.045;
+  cells.forEach((cell, k) => {
+    const col = PALETTE[k % PALETTE.length];
+    if (cell.pts.length < 3) return;
+    const g = octx.createRadialGradient(
+      cell.cx, cell.cy, 0, cell.cx, cell.cy,
+      Math.max(cvs.width, cvs.height) * 0.28);
+    g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},1)`);
+    g.addColorStop(1, `rgba(${Math.round(col[0]*0.55)},` +
+      `${Math.round(col[1]*0.55)},${Math.round(col[2]*0.55)},1)`);
+    octx.beginPath();
+    octx.moveTo(cell.pts[0][0], cell.pts[0][1]);
+    for (let p = 1; p < cell.pts.length; p++)
+      octx.lineTo(cell.pts[p][0], cell.pts[p][1]);
+    octx.closePath();
+    octx.fillStyle = g;
+    octx.strokeStyle = g;
+    octx.lineJoin = "round";
+    octx.lineCap = "round";
+    octx.lineWidth = plump;
+    octx.stroke();
+    octx.fill();
+  });
+  ctx.save();
+  ctx.filter = "blur(7px) contrast(12)";
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.22;
+  ctx.filter = "blur(3px)";
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+}
+
+let lastGeom = "";
+function frame() {
+  const strain = wasm.demo_tick();
+  tickCount++;
+  const cells = readGeom();
+  // Renderer is a stateless view of solver state (Invariant 6): when the
+  // state has not changed, there is nothing to repaint. This also keeps
+  // the settled raster literally frozen.
+  window.__cells = cells; // read-only verification hook
+  const key = JSON.stringify(cells);
+  if (key !== lastGeom) {
+    render(cells);
+    lastGeom = key;
+  }
+  const settled = wasm.demo_settled() > 0;
+  const flag = document.getElementById("flag");
+  flag.textContent = settled ? "SETTLED" : "OOZING";
+  flag.className = settled ? "settled" : "oozing";
+  document.getElementById("meterfill").style.width =
+    Math.min(strain / 4, 1) * 100 + "%";
+  document.getElementById("stats").textContent =
+    `${nCells} cells · strain ${strain.toFixed(3)} · tick ${tickCount}`;
+  requestAnimationFrame(frame);
+}
+
+(async () => {
+  const res = await fetch("nnui_demo.wasm");
+  const { instance } = await WebAssembly.instantiate(
+    await res.arrayBuffer(), {});
+  wasm = instance.exports;
+  resize();
+  const bts = document.getElementById("buttons");
+  CASES.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.textContent = c.name;
+    b.onclick = () => load(i);
+    bts.appendChild(b);
+  });
+  load(0);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

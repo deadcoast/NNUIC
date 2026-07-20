@@ -1,0 +1,32 @@
+#!/bin/sh
+# NNUI_CELL merge gate (ledger TK14/TK15/TK16). A failing invariant is
+# drift by definition; a failing gate blocks the commit. Repair the work,
+# never the gate.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "[gate] engine suite (invariants, milestones, budget, determinism)"
+cargo test --release --manifest-path engine/Cargo.toml --quiet
+
+echo "[gate] MIVIM link-completeness"
+python .MIVIM/tools/mivim_audit.py \
+  TODO.md TODO.md \
+  docs/DEVSPEC_WORKSTREAM_A.md docs/DEVSPEC_WORKSTREAM_A.md \
+  docs/DESIGN_API_CONTRACTS.md docs/DESIGN_API_CONTRACTS.md \
+  > .MIVIM/.gate_audit.json
+python - <<'PY'
+import json
+rows = json.load(open(".MIVIM/.gate_audit.json"))
+bad = [r["file"] for r in rows
+       if any(v for v in r.values() if isinstance(v, list))]
+if bad:
+    raise SystemExit(f"[gate] MIVIM link-completeness FAILED: {bad}")
+print("[gate] MIVIM clean:", ", ".join(r["file"] for r in rows))
+PY
+rm -f .MIVIM/.gate_audit.json
+
+echo "[gate] markdownlint"
+npx --yes markdownlint-cli2 TODO.md docs/DEVSPEC_WORKSTREAM_A.md \
+  docs/DESIGN_API_CONTRACTS.md README.md
+
+echo "[gate] all gates green"

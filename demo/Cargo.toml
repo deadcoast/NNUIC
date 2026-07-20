@@ -1,0 +1,17 @@
+[package]
+name = "nnui_demo"
+version = "0.1.0"
+edition = "2021"
+description = "NNUI_CELL integration demo: the engine in WASM, driven only through the public API"
+
+[lib]
+crate-type = ["cdylib"]
+
+# The only dependency is the engine itself; the WASM boundary is
+# hand-rolled so the dependency-free property carries into the demo.
+[dependencies]
+nnui_solver = { path = "../engine" }
+
+[profile.release]
+codegen-units = 1
+opt-level = 3

@@ -474,3 +474,70 @@ verified end-to-end by the M3 harness:
   `engine/reports/M3_TOKENS.txt`).
 
 **27/27 tests green.** Next: M4 — serialization and portability (TK13).
+
+## 2026-07-20: 018 — Milestone M4 passed; Stage 4 gates wired; ledger complete
+
+**M4 — serialization and portability (TK13).** `CellRecord` implemented
+per the D09 wire-format contract: the agent grammar is the carrier
+(version-headed single-cell fragment, origin hash when settled, canonical
+shortest-round-trip numbers). Six-test harness, all passing first run:
+
+- Cross-layout injection: export from settled dashboard, inject into
+  settled settings, re-settle — bit-identical across repeated runs. The
+  cross-surface portability claim is now a **measured result** (EV04),
+  not internal reasoning.
+- VG02 schema gate: field set equals the whitelist exactly;
+  geometry-bearing records are rejected at parse.
+- Binds do not travel; smuggled bind ops are rejected.
+- Canonical form is a fixpoint (export→inject→export is stable).
+- **Position cannot leak**: identically-declared cells at different
+  settled positions export byte-identical records — the wire-level proof
+  that geometry is structurally absent.
+- Duplicate injection is rejected atomically.
+
+**Stage 4 — automated gates (TK14/TK15/TK16, plus TK03).**
+`engine/tests/gates.rs` adds the frame-budget gate (50 regions inside
+16 ms/frame during active settling) and API-boundary determinism.
+`.githooks/pre-commit` (wired via `core.hooksPath`) runs the full 35-test
+engine suite, the MIVIM link-completeness audit (tool now permanent at
+`.MIVIM/tools/mivim_audit.py`), and markdownlint before every commit —
+a failing invariant is drift by definition and blocks the commit. Gate
+verified green end-to-end.
+
+**The execution ledger is complete**: all 16 tasks done, all 12
+requirements covered, milestone order held throughout (M1→M2→M3→M4, each
+gated on the prior binary exit), 35/35 tests green. Workstream A — the
+agent-facing API that is the point of the system — exists, validated.
+
+## 2026-07-20: 019 — Stage 5: the integration demo (TK17–TK19)
+
+The visible demo, built on top of the completed API (harness-first
+condition satisfied). Ledger extended with Stage 5 (WL06, REQ13/REQ14,
+TK17–TK19; 79/79 link-complete) before any code, per the pipeline.
+
+- **The real engine in the browser**: `demo/` compiles the engine to a
+  195 KB WASM module with hand-rolled glue — the dependency-free property
+  carries all the way to the demo. The page drives layout exclusively
+  through the public API and renders only what `Snapshot` exposes
+  (REQ13): centroid, hull, settled, strain, vessel map. Content is the
+  four agent-authored programs (R3 dashboard + the three M3 intents),
+  shown alongside their natural-language intents.
+- **Verification earned its keep twice** (REQ14, the standing rule):
+  1. The first render drew discrete dots — the exact analysis/003 drift,
+     again — and passed the programmatic checks because they didn't test
+     connectedness. Caught by *looking at the screenshot*; fixed with a
+     filled-hull renderer (one connected blob per cell by construction)
+     and encoded permanently: the verifier now requires one connected
+     component per cell with every centroid on matter.
+  2. The flicker check failed on one layout: engine strain was exactly
+     zero (verified natively and in-browser) — the culprit was GPU raster
+     nondeterminism under canvas blur. Fixed structurally: the renderer
+     skips repainting unchanged state, so a settled raster is literally
+     frozen.
+- Final verification, all four layouts: settled at ~300 ms wall-time,
+  strain exactly 0.000, one connected component per cell, raster frozen
+  over a one-second window. `demo/verify_demo.py` is the repeatable gate;
+  screenshots regenerable, not tracked.
+
+The full pipeline — brainstorm → paper → prototype → engine → **living
+demo driven by agent-authored programs** — is now walkable end to end.

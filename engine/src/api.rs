@@ -333,6 +333,134 @@ impl Engine {
     pub fn poll_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
     }
+
+    /// Export a cell as a portable record (DS04). The wire format is the
+    /// agent grammar itself: a single valid `cell` declaration carrying
+    /// identifier, material state (current S, n, ξ — material evolves;
+    /// geometry does not exist in the format), D, and content provenance.
+    /// Binds do not travel: gene transfer is opt-in per boundary, and an
+    /// auto-rebinding record would smuggle proximity coupling past that
+    /// rule — the injecting agent re-issues `bind` ops deliberately.
+    pub fn export_cell(&self, id: CellId) -> CellRecord {
+        let world = self.world.as_ref().expect("no program submitted");
+        let layout = self.layout.as_ref().expect("no program submitted");
+        let r = id.0 as usize;
+        let cell = &layout.cells[r];
+        let mat = world.regions[r].mat;
+        let content = match &cell.content {
+            Some(asset) => format!("hold {asset}"),
+            None => "germline".to_string(),
+        };
+        // canonical numbers: Rust's f64 Display is shortest round-trip
+        let source = format!(
+            "cell {} {{ S:{} n:{} xi:{} D:{} {} }}",
+            cell.id, mat.s, mat.n, mat.xi, cell.d, content
+        );
+        let settled = world.rest_t.iter().all(|&t| t >= REST_FRAMES);
+        CellRecord {
+            version: 1,
+            origin: if settled {
+                Some(StateHash(world.state_hash()))
+            } else {
+                None
+            },
+            source,
+        }
+    }
+
+    /// Inject a portable record into the active layout (DS04). The record
+    /// must be exactly one cell declaration — no ops (binds do not
+    /// travel), no duplicate identifier. At prototype fidelity the
+    /// augmented layout re-lowers deterministically (spawn placement is
+    /// part of the injection contract, correction C4); the medium then
+    /// re-settles under local pressure — same genotype, phenotype
+    /// re-expressed in context.
+    pub fn inject_record(
+        &mut self,
+        rec: &CellRecord,
+    ) -> Result<CellId, SubmitError> {
+        if rec.version != 1 {
+            return Err(SubmitError::Parse(format!(
+                "unsupported cellrecord version {}",
+                rec.version
+            )));
+        }
+        let fragment = grammar::parse(&rec.source).map_err(SubmitError::Parse)?;
+        if fragment.cells.len() != 1 || !fragment.ops.is_empty() {
+            return Err(SubmitError::Parse(
+                "a cellrecord must be exactly one cell declaration with no \
+                 ops (binds do not travel)"
+                    .to_string(),
+            ));
+        }
+        let mut augmented = self
+            .layout
+            .as_ref()
+            .expect("no program submitted")
+            .clone();
+        augmented.cells.push(fragment.cells.into_iter().next().unwrap());
+        validate(&augmented)?;
+        let world = augmented.to_world(SEED);
+        // -- commit point --
+        let n_cells = augmented.cells.len();
+        self.layout = Some(augmented);
+        self.world = Some(world);
+        self.tick = 0;
+        self.events.clear();
+        self.cell_settled = vec![false; n_cells];
+        self.global_settled = false;
+        self.events.push(Event::Resettling(Cause::Injection));
+        Ok(CellId((n_cells - 1) as u64))
+    }
+}
+
+/// A portable cell record (DS04): version, origin fingerprint, and the
+/// grammar fragment. Structurally geometry-free — the format has no field
+/// that could carry a position, extent, or settled shape.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CellRecord {
+    pub version: u32,
+    /// Settled-state hash of the exporting world, when it was settled.
+    pub origin: Option<StateHash>,
+    /// A single valid `cell` declaration in the agent grammar.
+    pub source: String,
+}
+
+impl CellRecord {
+    /// Serialize to wire text.
+    pub fn to_text(&self) -> String {
+        let origin = match self.origin {
+            Some(h) => format!("origin-hash {:#018x}\n", h.0),
+            None => String::new(),
+        };
+        format!("cellrecord v{}\n{}{}\n", self.version, origin, self.source)
+    }
+
+    /// Parse wire text back into a record.
+    pub fn from_text(text: &str) -> Result<CellRecord, SubmitError> {
+        let mut lines = text.lines();
+        let head = lines.next().unwrap_or_default();
+        let version: u32 = head
+            .strip_prefix("cellrecord v")
+            .and_then(|v| v.parse().ok())
+            .ok_or_else(|| {
+                SubmitError::Parse("missing cellrecord header".to_string())
+            })?;
+        let mut origin = None;
+        let mut source_lines: Vec<&str> = Vec::new();
+        for line in lines {
+            if let Some(h) = line.strip_prefix("origin-hash ") {
+                let h = h.trim_start_matches("0x");
+                let v = u64::from_str_radix(h, 16).map_err(|_| {
+                    SubmitError::Parse("bad origin-hash".to_string())
+                })?;
+                origin = Some(StateHash(v));
+            } else if !line.trim().is_empty() {
+                source_lines.push(line);
+            }
+        }
+        Ok(CellRecord { version, origin, source: source_lines.join("\n") })
+    }
 }
 
 /// Deterministic convex hull (Andrew's monotone chain). Points are sorted
