@@ -1864,7 +1864,10 @@ I have not re-shipped this to /mnt/user-data/outputs/, updated the README, or co
 
 ---
 
-Picking up exactly where I stopped: viewing the three captures before touching anything.Identified and refactored redundant code logicIdentified and refactored redundant code logicCheck settled pool appearanceNavigating image constraints and proceeding cautiously.Check mid-slosh capture — did it visibly move?Check locked/vitrified captureVerifying displacement calculations and visual consistency.Reconciling gravity displacement with arrest threshold mechanics.Architecting yield-stress mechanics and particle structure recovery.Calibrating particle structure decay and falling velocity thresholds.Verifying settlement timings and validating slosh capture across states.Refactoring solver with corrected thixotropic mechanism.Diagnosed measurement flaw and architected corrected solver mechanism.Rewrite solver: thixotropic rest-latch, honest strain, tilt-slosh, displacement-stirbashcd /tmp/nnui_solver/demo; python3 - <<'PY'
+Picking up exactly where I stopped: viewing the three captures before touching anything.Identified and refactored redundant code logicIdentified and refactored redundant code logicCheck settled pool appearanceNavigating image constraints and proceeding cautiously.Check mid-slosh capture — did it visibly move?Check locked/vitrified captureVerifying displacement calculations and visual consistency.Reconciling gravity displacement with arrest threshold mechanics.Architecting yield-stress mechanics and particle structure recovery.Calibrating particle structure decay and falling velocity thresholds.Verifying settlement timings and validating slosh capture across states.Refactoring solver with corrected thixotropic mechanism.Diagnosed measurement flaw and architected corrected solver mechanism.Rewrite solver: thixotropic rest-latch, honest strain, tilt-slosh, displacement-stirbashcd /tmp/nnui_solver/demo;
+
+```py
+python3 - <<'PY'
 import re
 path="nnui_cell_bench.html"; src=open(path).read()
 new_script=r'''<script>
@@ -2068,10 +2071,9 @@ window.__dbg=function(){ let out=[],lat=0; for(let i=0;i<N;i++){ if(xi[i]>=XI_RE
 resize();
 for(let k=0;k<8;k++) addBlob(W*(0.18+0.64*k/7), H*(0.55+0.28*Math.random()), 8, 8, k);
 requestAnimationFrame(frame);
-</script>'''
+</script>
 src=re.sub(r"<script>.*</script>", lambda m:new_script, src, count=1, flags=re.S)
 open(path,"w").write(src); print("rewritten", len(src))
-PY
 python3 - <<'PY'
 import re;s=open("nnui_cell_bench.html").read();m=re.search(r"<script>(.*)</script>",s,re.S);open("_x.js","w").write(m.group(1))
 PY
@@ -2578,6 +2580,8 @@ PYOutput_f_settled: matter%=11.3 major_comps=1 largest=100% xspan=(89,759) ytop=
 _f_slosh: matter%=10.8 major_comps=1 largest=100% xspan=(150,811) ytop=410 amber=False
 _f_resettled: matter%=10.7 major_comps=1 largest=100% xspan=(181,818) ytop=384 amber=False
 _f_locked: matter%=15.0 major_comps=1 largest=100% xspan=(181,818) ytop=381 amber=True
+```
+
 settled-vs-slosh changed pixels: 3.7%
 Final look at the settled pool before shippingRewrite README section; ship demo + README to outputsVerify shipped files match working treeUpdated memoryAreas›NnlgNNUI_CELL project — non-Newtonian User Interface Cell; a cellular/rheological self-adjusting UI ecosystem. SLIME is now a trait of the CELL. Read when this project comes upPresented 2 filesDoneDone, and this time "done" means proven, not asserted.
 What the demo now shows — the thesis, on screen: one continuous medium poured into a bowl. It falls in as wads, merges into a single slime pool, takes the vessel's shape, and the strain meter drains to zero as STATE flips to SETTLED. Slosh tilts the vessel — the pool surges up one wall and sets within a second, redistributed like real slime. The solidity dial is the yield: low S pours, mid S is gloopy paste, high S vitrifies amber. Every frame is solved from material state; the meter now reads actual measured displacement, so it cannot claim SETTLED while anything moves.
