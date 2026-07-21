@@ -189,7 +189,48 @@ ships nothing visual unverified [REQ14].
   layouts settle at ~300 ms, strain exactly 0, connected, frozen raster.
   `demo/verify_demo.py` is the repeatable gate.
 
-## (8) Completion criteria [AC]
+## (8) Stage 6: tessellation — the solid interface at rest [WL06]
+
+> Goal: [GL05] — BUILD_MILESTONES_IN_ORDER
+> Dependency: [DP05] — DESIGN_CONTRACTS
+> Requirement: [RQ05] — MILESTONE_ORDER_ENFORCED
+
+Close the gap named in journal entry 020: the settled screen must read as
+a complete interface — the medium edge to edge, cells pressed flat against
+walls and each other, voids only where whitespace is declared [REQ15].
+
+- [ ] [TK20] Solver: fill runs to pressure stall, not to an area target —
+  the medium keeps claiming space until expansion no longer realizes
+  displacement, so cells flatten against walls and against each other and
+  corners are claimed. Stall latches; wakes on resize or injection
+  [REQ15], [REQ11]. IN PROGRESS: wall-coverage stall predicate landed
+  (fill may not end while wall spans are unclaimed) and radius
+  conservation landed suite-green (effective particle radius scales with
+  lattice spacing; proportional C1 tolerance; material radius exposed
+  through the read path and rendered). Lit now 95–100% on every layout.
+  Remaining, per journal entry 022: interleaving persists via shard arms
+  frozen during early growth (mean-radius cannot fix non-uniform
+  stretching) and corner wedges — both point at the one unrealized
+  paper term, the E_cohesion interface tension, which per the pipeline
+  gets DESIGNED on paper (TK22) before further solver iteration.
+- [ ] [TK21] Verification bar raised: lit fraction at the tessellation
+  standard, all four vessel corners claimed, per-cell connectivity and
+  every prior framework check retained [REQ15], [REQ14]. IN PROGRESS:
+  bar raised (lit ≥ 80%, four-corner claim); chat and resize pass fully
+  at 100% lit; dashboard/kanban/gallery pass all checks except corners.
+- [x] [TK22] Spec currency: the session's normative discoveries (E_fill
+  discrete realization, plastic post-yield rests, bulk-transport binds,
+  latch ξ assignment) recorded as a v0.3 addendum to the paper — the
+  pipeline requires development to sharpen the documented realization
+  [REQ16], [REQ01]. Done: `latex/v0.3/NNUI_CELL_Addendum_v0.3.tex/.pdf`
+  — corrections C5–C9 (validated, normative: fill with wall-coverage
+  stall, plastic rests, bulk binds, latch ξ=1, radius conservation) plus
+  the DESIGN of E_cohesion as boundary curvature flow, with
+  pre-registered binary validation exits T1–T4 that implementation must
+  pass before the design is admitted as normative. Evidence levels
+  marked honestly throughout.
+
+## (9) Completion criteria [AC]
 
 > Goal: [GL07] — DEFINE_TASK_COMPLETION
 > Dependency: [DP07] — TASK_SET
@@ -219,10 +260,10 @@ below remains link-complete [LC], [LN].
   [RQ06], [RQ07]
 - Project requirements: [REQ], [REQ01], [REQ02], [REQ03], [REQ04], [REQ05],
   [REQ06], [REQ07], [REQ08], [REQ09], [REQ10], [REQ11], [REQ12], [REQ13],
-  [REQ14]
+  [REQ14], [REQ15], [REQ16]
 - Tasks: [TK01], [TK02], [TK03], [TK04], [TK05], [TK06], [TK07], [TK08],
   [TK09], [TK10], [TK11], [TK12], [TK13], [TK14], [TK15], [TK16], [TK17],
-  [TK18], [TK19]
+  [TK18], [TK19], [TK20], [TK21], [TK22]
 
 ## (Z) Context-Citations
 
@@ -436,6 +477,14 @@ below remains link-complete [LC], [LN].
   "Nothing visual ships without its rendered output captured and checked
   programmatically first — the standing rule from the bench rejection."
 
+[REQ15]: TESSELLATION
+  "The settled screen is edge-to-edge medium: cells flatten against walls
+  and each other; voids exist only as declared whitespace material."
+
+[REQ16]: SPEC_CURRENCY
+  "Normative discoveries made in development are folded back into the
+  paper; the CHANGELOG alone is not the specification."
+
 [TK01]: REFRESH_CLAUDE_MD_TASK
   "Task to bring CLAUDE.md in line with v0.2, the git repository, and the
   MIVIM contract."
@@ -503,3 +552,14 @@ below remains link-complete [LC], [LN].
 [TK19]: DEMO_VERIFY_TASK
   "Task to verify the rendered demo programmatically before calling it
   done."
+
+[TK20]: TESSELLATION_FILL_TASK
+  "Task to run the fill to pressure stall so the medium claims the vessel
+  edge to edge, corners included."
+
+[TK21]: TESSELLATION_VERIFY_TASK
+  "Task to raise the verification bar to the tessellation standard."
+
+[TK22]: SPEC_ADDENDUM_TASK
+  "Task to record the session's normative discoveries as a v0.3 addendum
+  to the paper."

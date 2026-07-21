@@ -541,3 +541,154 @@ TK17–TK19; 79/79 link-complete) before any code, per the pipeline.
 
 The full pipeline — brainstorm → paper → prototype → engine → **living
 demo driven by agent-authored programs** — is now walkable end to end.
+
+## 2026-07-20: 020 — Intent correction: the demo becomes the framework
+
+Creative-lead intervention: the first demo showed floating blobs — plumbing
+presented as thesis, the box model in a slime costume. Root cause: three
+mechanisms specified in the frozen paper were never realized in the
+prototype solver, and the master developer had lost the intent picture
+(solid interface at rest; fluid only in transition; one substance filling
+the vessel; cells ARE their expressed content). Corrected against the
+standards — every change is a discrete realization of frozen theory:
+
+- **E_fill realized** (eq. 6): layout worlds fill the vessel — outward
+  quasi-static drive (C2) that yields against S, ξ rebuild suspended
+  during the fill phase (§7.2 boundary condition). The vessel is claimed;
+  **sizes are solved from material**: `S:0.3 main` settles at 2.4× the
+  default-S KPI cells, exactly the §9 worked example.
+- **Post-yield plastic flow** (n<1 realization): awake layout regions'
+  material rest lengths follow realized geometry at a rate yielding
+  against S — soft matter flows into claimed space, stiff keeps shape,
+  rests hold elastically at rest.
+- **Binds transport bulk** (E_cohesion): a single-anchor spring failed —
+  plasticity absorbed it while the body never moved; and a
+  stiffness-scaled attraction slingshotted at rest (compliance-at-rest
+  failure class, third sighting). Final mechanism: bounded interfacial
+  drive moving all particles of both regions until adjacency; stiff
+  contacts stop overlap — cohesive groups pack, solved.
+- **§7.3 latch assignment**: the region latch now literally sets ξ=1 on
+  engage (as the paper writes it) — caught by the M4 position-leak test
+  when settle *history* leaked into exported records via divergent ξ.
+- **Registry-complete API**: `Engine::register_asset` feeds real bytes
+  through sequencing; the engine registers the R4 extension type, so
+  cells genuinely express chart / player / reader / image-viewer.
+- **§9 zero-cost adaptation, live**: `resize_vessel` reshapes the world
+  to the vessel aspect, wakes the medium, and it re-settles with no
+  program call — demonstrated and verified (program text unchanged).
+- **Verification raised to the framework standard**: per layout — settled
+  exact, vessel substantially claimed, big-cell ratio ≥1.5× satellites,
+  bound pairs adjacent, phenotypes as expected, raster frozen at rest,
+  plus the resize claim. All four layouts + resize PASS; engine suite
+  35/35 green throughout.
+
+Remaining gap, named honestly: the settled screen is a packed organic
+tessellation, not yet a crisp edge-to-edge interface — corner voids
+remain (~50–80% lit by layout), menisci are rendered rather than
+E_cohesion-derived, and content inclusions are still the deferred
+fidelity step. The framework claims are now TRUE on screen; the polish to
+"solid interface at rest" is the next iteration.
+
+## 2026-07-20: 021 — Stage 6 in progress: tessellation physics
+
+Stage 6 (TK20–TK22) opened in the ledger and substantially advanced; exit
+not yet met, recorded honestly rather than declared.
+
+**Landed:**
+
+- **Wall-coverage stall predicate**: the fill phase may not end while
+  wall spans remain unclaimed (edge-to-edge is part of E_fill's
+  definition). Boundary segments are tracked; stall requires >90% wall
+  coverage plus growth stall, with a hard-stop safety. Screen claim rose
+  from 50–75% to **92–100% lit**; chat and the §9 resize demonstration
+  now pass the raised bar completely at 100% lit.
+- **Wall-band void-seeking**: near walls, fill direction blends toward
+  the local void (creep along walls, corner zones owned by void-seeking)
+  — restricted to the wall band because global void-seeking demonstrably
+  pulls taffy shards (probed, rejected).
+- **Verification raised** (TK21 partial): lit ≥ 80% plus a four-corner
+  claim check; API settle budget raised to the invariant-suite budget.
+- Mechanisms probed and rejected with evidence, per anti-drift: global
+  voidward steering (shards), strong roundness tension (collapses fill,
+  breaks solved sizes), per-frame area-target scaling (starves against
+  constraint pullback — soft cells never grow).
+
+**Open problems, precisely named for the next session:**
+
+1. **Cell interleaving.** Dilated lattices are porous point-clouds —
+   particle spacing grows to 2–3 units while contact radius stays 0.5,
+   so regions finger through each other's interiors and their hulls
+   overlap like stacked glass sheets instead of tiling. Identified fix,
+   physically principled: effective particle radius must scale with
+   lattice spacing (continuum matter does not become porous when it
+   dilates). A first attempt destabilized contact rests, the C1 guard,
+   and arrest balance across the suite — reverted; it needs its own
+   instrumented iteration like the arrest mechanism did.
+2. **Corner wedges** partially unclaimed (1–3 of 4 corners per layout at
+   the 50 px / 30% standard) — likely resolved by the same radius fix,
+   since non-porous cells under pressure must squeeze into wedges.
+
+State at close: engine suite 8/8 groups green, merge gate exit 0, demo
+verified at the previous framework standard with the two named
+shortfalls. TK20/TK21 remain open with progress notes; TK22 (v0.3
+addendum) deferred until the tessellation mechanics stop moving.
+
+## 2026-07-20: 022 — Stage 6 continued: radius conservation lands
+
+The identified fix from entry 021 implemented with its full support and
+kept: **effective particle radius scales with lattice spacing**
+(continuum matter does not become porous when it dilates), the C1 guard
+tolerance made proportional to contact rest (an absolute tolerance
+misclassifies ordinary prestress at dilated scale), the contact search
+grid follows the radius, and the material radius is exposed through the
+read path (`CellView.radius`) so the renderer draws true material
+extent. Engine suite 8/8 green with the mechanism live; lit fraction now
+**95–100% on every layout**; chat and the §9 resize pass the tessellation
+bar completely.
+
+Honest residual, sharpened by this iteration: interleaving is reduced
+but not eliminated — shard arms frozen during early growth cross other
+cells, and a per-region MEAN radius cannot seal non-uniformly stretched
+arms. Corners follow the same cause. Both trace to the one paper term
+still unrealized: **E_cohesion's interface tension** (compactness /
+interface-length minimization). Naive versions were already probed and
+rejected with evidence (global void-seeking → shards; radial roundness
+tension → collapses fill). Per the pipeline — planning before
+development — the next step is TK22: design the discrete E_cohesion
+mechanism on paper as part of the v0.3 addendum, then implement against
+that design.
+
+## 2026-07-20: 023 — TK22 complete: the v0.3 addendum
+
+`latex/v0.3/NNUI_CELL_Addendum_v0.3.tex` (+ built PDF), supplementing the
+v0.2 specification, which remains canonical. Contents:
+
+- **Corrections C5–C9, validated and normative**, each with its measured
+  failure lineage: C5 E_fill as a quasi-static drive with the
+  wall-coverage stall predicate (edge-to-edge is part of E_fill's
+  definition; area-target stall measured at 50–75% claim vs 95–100%
+  with the predicate); C6 plastic post-yield rest adaptation (the
+  discrete n<1 realization); C7 bulk-transport binding (single-anchor
+  springs absorbed by plasticity; stiffness-scaled attraction slingshots
+  at rest — third sighting of the compliance-at-rest failure class); C8
+  the latch's exact ξ=1 assignment (settle history must not leak into
+  portable records); C9 radius conservation under dilation with
+  proportional C1 tolerance and radius exposed through the read path.
+- **The E_cohesion design** — the addendum's core new content, marked
+  honestly as design (internal reasoning), not result: interface tension
+  realized as **discrete curvature flow on region boundaries**. Boundary
+  particles detected by neighborhood deficit; discrete curvature κ_i =
+  (mean of boundary neighbors) − x_i; bounded quasi-static tension step
+  along κ. Flat interfaces (wall contact, shared seams) carry no force —
+  so it cannot fight tiling or wall conformity, which is precisely where
+  both failed candidates died; bulges retract, dents fill, shard arms
+  collapse. Predicted equilibrium: compact tiles, flat shared seams,
+  menisci — the paper's own stated E_cohesion consequences.
+- **Pre-registered binary exits T1–T4** gate the implementation: no
+  interleaving (pairwise hull intersection <2%), all corners claimed,
+  nothing regresses (claim ≥90%, sizes, binds, phenotypes, frozen rest,
+  §9 resize), full suite green with determinism preserved. The design is
+  wrong if they fail, and the failure record joins the lineage.
+
+Stage 6 next step is now specified work, not exploration: implement
+boundary curvature flow against T1–T4.

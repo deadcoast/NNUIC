@@ -26,12 +26,16 @@ fn m1_api_matches_grammar_path_for_three_layouts() {
         ("article", ARTICLE),
         ("settings", SETTINGS),
     ] {
-        let (_frames, grammar_hash) =
-            grammar::parse(src).unwrap().settle_hash(SEED);
+        let layout = grammar::parse(src).unwrap();
+        let mut w = nnui_solver::solver::World::from_layout(
+            &layout, 1280.0, 800.0, SEED,
+        );
+        w.settle(4000);
+        let reference = w.state_hash();
         let api = api_hash(src);
         assert_eq!(
-            api, grammar_hash,
-            "{name}: public API hash diverged from grammar path"
+            api, reference,
+            "{name}: public API hash diverged from the layout-world path"
         );
     }
 }

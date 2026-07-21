@@ -84,6 +84,26 @@ pub struct World {
     /// material constraints held (not projected), waking only on a
     /// supra-yield disturbance (paper v0.2 §7).
     pub rest_t: Vec<u32>,
+    /// E_fill (paper eq. 6): when enabled, the medium expands into void
+    /// until the vessel is claimed — "the slime fills the bowl". Growth is
+    /// a quasi-static displacement (C2) that yields against S, so soft
+    /// matter claims more space: SIZES ARE SOLVED from material state.
+    pub fill_enabled: bool,
+    /// The fill phase ends at PRESSURE STALL — when expansion no longer
+    /// realizes new claimed area — not at an area target. Pressed against
+    /// walls and each other, cells flatten into tiles and corners are
+    /// claimed (tessellation, REQ15). Latched here; released by resize
+    /// or injection.
+    pub fill_done: bool,
+    last_occ: f64,
+    occ_stall: u32,
+    /// Deliberate bind pairs (region indices): E_cohesion across the
+    /// marked interface — bound cells pack together and move as a group.
+    pub binds: Vec<(usize, usize)>,
+    /// Per-region area targets (the paper's volume/occupancy constraint):
+    /// shares of the vessel solved from softness, (1-S)², so material
+    /// state determines size. Empty for legacy (non-layout) worlds.
+    pub area_target: Vec<f64>,
     /// C2 refinement: particles whose realized velocity reversed direction
     /// last frame carry no momentum into the next predict (oscillation in
     /// an overdamped medium dissipates; carried momentum is what sustains
@@ -209,6 +229,12 @@ impl World {
             inv_mass: vec![1.0; n],
             radius: vec![prad; n],
             rest_t: vec![0; regions.len()],
+            fill_enabled: false,
+            fill_done: false,
+            last_occ: 0.0,
+            occ_stall: 0,
+            binds: Vec::new(),
+            area_target: Vec::new(),
             no_carry: vec![false; n],
             cage_mark: pos.clone(),
             rattle: vec![false; n],
@@ -426,25 +452,355 @@ impl World {
     }
 
     /// One deterministic solver tick (paper §5.3).
+    /// Fraction of the vessel claimed by matter (bounding-extent
+    /// estimate). Drives the E_fill phase toward its target.
+    pub fn occupancy(&self) -> f64 {
+        let mut area = 0.0;
+        for reg in &self.regions {
+            let (mut minx, mut miny) = (f64::INFINITY, f64::INFINITY);
+            let (mut maxx, mut maxy) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for k in reg.first..reg.first + reg.count {
+                let p = self.pos[k];
+                minx = minx.min(p.x);
+                miny = miny.min(p.y);
+                maxx = maxx.max(p.x);
+                maxy = maxy.max(p.y);
+            }
+            area += (maxx - minx).max(0.0) * (maxy - miny).max(0.0);
+        }
+        area / (self.w * self.h)
+    }
+
+    /// Fraction of the vessel boundary within reach of matter. The fill
+    /// phase may not stall while wall spans remain unclaimed — edge to
+    /// edge is part of E_fill's definition, not a nice-to-have.
+    pub fn wall_coverage(&self) -> f64 {
+        let seg = 2.0;
+        let reach = 3.0;
+        let nx = (self.w / seg).ceil() as usize;
+        let ny = (self.h / seg).ceil() as usize;
+        let mut cov = vec![false; 2 * nx + 2 * ny];
+        for p in &self.pos {
+            if p.y < reach {
+                cov[(p.x / seg).floor().clamp(0.0, nx as f64 - 1.0) as usize] =
+                    true;
+            }
+            if p.y > self.h - reach {
+                cov[nx
+                    + (p.x / seg).floor().clamp(0.0, nx as f64 - 1.0) as usize] =
+                    true;
+            }
+            if p.x < reach {
+                cov[2 * nx
+                    + (p.y / seg).floor().clamp(0.0, ny as f64 - 1.0) as usize] =
+                    true;
+            }
+            if p.x > self.w - reach {
+                cov[2 * nx
+                    + ny
+                    + (p.y / seg).floor().clamp(0.0, ny as f64 - 1.0) as usize] =
+                    true;
+            }
+        }
+        cov.iter().filter(|&&c| c).count() as f64 / cov.len() as f64
+    }
+
+    /// Viewport change: the vessel reshapes and the medium re-settles
+    /// with no further program call (paper §9, zero-cost adaptation).
+    /// The whole body is under imposed shear: latches release, structure
+    /// erodes, and the fill phase re-runs in the new vessel.
+    pub fn resize(&mut self, w: f64, h: f64) {
+        self.w = w;
+        self.h = h;
+        for r in 0..self.regions.len() {
+            self.rest_t[r] = 0;
+            self.regions[r].mat.xi *= 0.3;
+        }
+        for k in 0..self.cage_t_len() {
+            self.rattle[k] = false;
+            self.cage_mark[k] = self.pos[k];
+        }
+        // the fill phase re-runs in the reshaped vessel: area shares are
+        // re-solved from the same material state over the new vessel area
+        self.fill_done = false;
+        self.last_occ = 0.0;
+        self.occ_stall = 0;
+        if !self.area_target.is_empty() {
+            self.set_area_targets();
+        }
+    }
+
+    /// Solve area shares from softness: share_r ∝ (1-S_r)², normalized
+    /// over the vessel. Material state determines size (§9); nothing is
+    /// authored.
+    pub fn set_area_targets(&mut self) {
+        let total = self.w * self.h;
+        let weights: Vec<f64> = self
+            .regions
+            .iter()
+            .map(|r| ((1.0 - r.mat.s).max(0.1)).powi(2))
+            .collect();
+        let sum: f64 = weights.iter().sum();
+        self.area_target =
+            weights.iter().map(|w| total * w / sum).collect();
+    }
+
+    fn cage_t_len(&self) -> usize {
+        self.pos.len()
+    }
+
     pub fn step(&mut self) {
         let dt = self.dt;
         let dt2 = dt * dt;
 
+        // E_fill phase (paper eq. 6): active until PRESSURE STALL — the
+        // medium keeps claiming space until expansion stops realizing new
+        // area, so cells flatten against walls and each other and corners
+        // are claimed (tessellation). While filling, the frame is
+        // effectively accelerating (the boot pour): ξ rebuild is
+        // suspended (§7.2) so the medium flows freely into void.
+        const G_FILL: f64 = 8.0; // outward drive u/s at S=0, yields vs S
+        if self.fill_enabled && !self.fill_done && self.frame % 15 == 0 {
+            let occ = self.occupancy();
+            let stalled = occ > 0.985 || occ - self.last_occ < 0.0004;
+            if stalled {
+                self.occ_stall += 1;
+                // normal exit: growth stalled AND the boundary is claimed
+                // edge to edge; hard exit: long stall regardless (safety)
+                let walls = self.wall_coverage();
+                if (self.occ_stall >= 6 && walls > 0.9)
+                    || self.occ_stall >= 40
+                {
+                    self.fill_done = true;
+                }
+            } else {
+                self.occ_stall = 0;
+            }
+            self.last_occ = occ;
+        }
+        let filling = self.fill_enabled && !self.fill_done;
+
         // strain rate from current velocities; update thixotropic structure
         let sr = self.region_strain_rate();
         for r in 0..self.regions.len() {
-            let next = rheology::step_structure(&self.regions[r].mat, sr[r], dt);
+            let mat = self.regions[r].mat;
+            let next = if filling {
+                // rebuild suspended; shear still erodes structure
+                (mat.xi - mat.a * mat.xi * sr[r] * dt).clamp(0.0, 1.0)
+            } else {
+                rheology::step_structure(&mat, sr[r], dt)
+            };
             self.regions[r].mat.xi = next;
         }
 
-        // predict (no gravity; layout forces only). Overdamped: only a small
-        // fraction `damping` of last frame's motion is carried as momentum, so
-        // the medium relaxes (gradient flow) instead of sloshing.
+        // Continuum conservation under dilation (layout worlds): a dilated
+        // lattice is not a porous point-cloud — effective particle radius
+        // scales with lattice spacing, so cells cannot finger through each
+        // other's interiors; they must tile. Radius follows spacing
+        // smoothly (spacing grows ~1%/frame during fill), and the contact
+        // search grid follows the radius.
+        if self.fill_enabled {
+            let mut sum = vec![0.0; self.regions.len()];
+            let mut cnt = vec![0u32; self.regions.len()];
+            for &(a, _b, rest) in &self.cohesion {
+                let r = self.region_of[a];
+                sum[r] += rest;
+                cnt[r] += 1;
+            }
+            let mut maxr: f64 = 0.5;
+            for r in 0..self.regions.len() {
+                if cnt[r] == 0 {
+                    continue;
+                }
+                // mean cohesion rest ≈ 1.14 × lattice spacing (diagonals)
+                let spacing = sum[r] / cnt[r] as f64 / 1.14;
+                let pr = (0.5 * spacing).clamp(0.5, 2.0);
+                if pr > maxr {
+                    maxr = pr;
+                }
+                let reg = Region { ..self.regions[r] };
+                for k in reg.first..reg.first + reg.count {
+                    self.radius[k] = pr;
+                }
+            }
+            self.cell = 2.0 * maxr;
+        }
+
+        let centroids_pre = self.region_centroids();
+
+        // predict (layout forces only, C2: quasi-static displacements).
+        // Overdamped: only a small fraction of last frame's motion carries.
         for i in 0..self.pos.len() {
             self.prev[i] = self.pos[i];
             if !self.no_carry[i] {
                 self.pos[i] =
                     self.pos[i].add(self.vel[i].scale(self.damping * dt));
+            }
+        }
+        if filling {
+            // E_fill, the proven realization: radial dilation claims
+            // volume at a rate that yields against S (sizes solved from
+            // material, §9); plastic rests flatten pressed fronts into
+            // tiles. Near walls, a void-seeking bias (away from the local
+            // matter centroid) creeps matter along the wall into corners
+            // — restricted to the wall band, because applied globally it
+            // pulls taffy shards.
+            use std::collections::HashMap;
+            let inv = 1.0 / self.cell;
+            let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+            for i in 0..self.pos.len() {
+                let gx = (self.pos[i].x * inv).floor() as i64;
+                let gy = (self.pos[i].y * inv).floor() as i64;
+                grid.entry((gx, gy)).or_default().push(i);
+            }
+            let rr: f64 = 3.0;
+            let rr2 = rr * rr;
+            let span = rr.ceil() as i64;
+            let wall_near = 4.0;
+            for r in 0..self.regions.len() {
+                if self.rest_t[r] >= REST_FRAMES {
+                    continue;
+                }
+                let reg = Region { ..self.regions[r] };
+                let g = G_FILL * (1.0 - reg.mat.s).max(0.0) * dt;
+                let c = centroids_pre[r];
+                for k in reg.first..reg.first + reg.count {
+                    let p = self.pos[k];
+                    let radial =
+                        p.sub(c).norm_or(Vec2::new(1.0, 0.0));
+                    let near_wall = p.x < wall_near
+                        || p.y < wall_near
+                        || p.x > self.w - wall_near
+                        || p.y > self.h - wall_near;
+                    let dir = if near_wall {
+                        let gx = (p.x * inv).floor() as i64;
+                        let gy = (p.y * inv).floor() as i64;
+                        let (mut sx, mut sy, mut nb) = (0.0, 0.0, 0u32);
+                        for dy in -span..=span {
+                            for dx in -span..=span {
+                                if let Some(b) =
+                                    grid.get(&(gx + dx, gy + dy))
+                                {
+                                    for &j in b {
+                                        let d = self.pos[j].sub(p);
+                                        if d.dot(d) < rr2 {
+                                            sx += self.pos[j].x;
+                                            sy += self.pos[j].y;
+                                            nb += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if nb > 1 {
+                            let m = Vec2::new(
+                                sx / nb as f64,
+                                sy / nb as f64,
+                            );
+                            let voidward =
+                                p.sub(m).norm_or(Vec2::zero());
+                            // in a corner zone the deepest void is the
+                            // corner wedge itself: void-seeking owns the
+                            // direction (radial fights the diagonal)
+                            let cb = 6.0;
+                            let in_corner = (p.x < cb
+                                || p.x > self.w - cb)
+                                && (p.y < cb || p.y > self.h - cb);
+                            if in_corner {
+                                voidward
+                            } else {
+                                radial
+                                    .add(voidward.scale(1.2))
+                                    .norm_or(radial)
+                            }
+                        } else {
+                            radial
+                        }
+                    } else {
+                        radial
+                    };
+                    self.pos[k] = self.pos[k].add(dir.scale(g));
+                }
+            }
+        }
+
+        // Deliberate binds (E_cohesion across the marked interface):
+        // interfacial tension transports the BULK of both regions toward
+        // each other, as a quasi-static displacement (C2), until they sit
+        // adjacent — stiff contacts stop overlap, so the group packs.
+        // A single-anchor spring fails here: plasticity absorbs it and
+        // the anchor migrates while the body never moves.
+        if self.fill_enabled {
+            const G_BIND: f64 = 3.0;
+            let half_extent = |w: &World, r: usize| -> f64 {
+                let reg = &w.regions[r];
+                let c = centroids_pre[r];
+                let mut m = 0.0f64;
+                for k in reg.first..reg.first + reg.count {
+                    let d = w.pos[k].sub(c).len();
+                    if d > m {
+                        m = d;
+                    }
+                }
+                m
+            };
+            let binds = self.binds.clone();
+            for (ra, rb) in binds {
+                if self.rest_t[ra] >= REST_FRAMES
+                    && self.rest_t[rb] >= REST_FRAMES
+                {
+                    continue;
+                }
+                let ea = half_extent(self, ra);
+                let eb = half_extent(self, rb);
+                let d = centroids_pre[rb].sub(centroids_pre[ra]);
+                if d.len() > (ea + eb) * 1.05 {
+                    let dir = d.norm_or(Vec2::new(1.0, 0.0));
+                    let step = dir.scale(G_BIND * dt);
+                    let (a0, ac) =
+                        (self.regions[ra].first, self.regions[ra].count);
+                    for k in a0..a0 + ac {
+                        self.pos[k] = self.pos[k].add(step);
+                    }
+                    let (b0, bc) =
+                        (self.regions[rb].first, self.regions[rb].count);
+                    for k in b0..b0 + bc {
+                        self.pos[k] = self.pos[k].sub(step);
+                    }
+                }
+            }
+        }
+
+        // Post-yield flow is plastic (n < 1 realization): while a layout
+        // region is awake, its material rest lengths follow the realized
+        // geometry at a rate that yields against S. Stiff matter keeps its
+        // shape; soft matter flows into the space it claims. At rest the
+        // rests hold — elastic below yield.
+        if self.fill_enabled {
+            const PLASTIC: f64 = 6.0;
+            for i in 0..self.cohesion.len() {
+                let (a, b, rest) = self.cohesion[i];
+                let r = self.region_of[a];
+                if self.rest_t[r] >= REST_FRAMES {
+                    continue;
+                }
+                let s = self.regions[r].mat.s;
+                let d = self.pos[a].sub(self.pos[b]).len();
+                let k = (PLASTIC * (1.0 - s) * dt).min(1.0);
+                self.cohesion[i] = (a, b, rest + (d - rest) * k);
+            }
+            for r in 0..self.regions.len() {
+                if self.rest_t[r] >= REST_FRAMES {
+                    continue;
+                }
+                let reg = Region { ..self.regions[r] };
+                let s = reg.mat.s;
+                let k = (PLASTIC * (1.0 - s) * dt).min(1.0);
+                let c = centroids_pre[r];
+                for p in reg.first..reg.first + reg.count {
+                    let d = self.pos[p].sub(c).len();
+                    self.turgor_rest[p] += (d - self.turgor_rest[p]) * k;
+                }
             }
         }
 
@@ -490,7 +846,10 @@ impl World {
         let mut arrestable = vec![true; self.pos.len()];
         for (a, b, rest) in self.build_contacts() {
             let d = self.pos[a].sub(self.pos[b]).len();
-            if rest - d > CONTACT_TOL {
+            // tolerance proportional to the contact rest: with dilated
+            // radii an absolute tolerance misclassifies ordinary residual
+            // prestress as topological violation
+            if rest - d > (CONTACT_TOL * rest).max(CONTACT_TOL) {
                 arrestable[a] = false;
                 arrestable[b] = false;
             }
@@ -548,6 +907,12 @@ impl World {
                 }
                 if self.rest_t[r] < u32::MAX {
                     self.rest_t[r] += 1;
+                }
+                if self.rest_t[r] == REST_FRAMES {
+                    // §7.3 as written: the latch SETS ξ = 1. Structure is
+                    // fully rebuilt at rest — and settle history cannot
+                    // leak into exported material state.
+                    self.regions[r].mat.xi = 1.0;
                 }
             } else {
                 // flowing (or disturbed / interpenetrating): the region is

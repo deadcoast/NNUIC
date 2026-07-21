@@ -1,0 +1,266 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\definecolor{ink}{HTML}{16181D}
+\definecolor{accent}{HTML}{1F6F5C}
+\definecolor{accent2}{HTML}{7A3B69}
+\definecolor{rule}{HTML}{C9CDD4}
+
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent, citecolor=accent}
+
+\titleformat{\section}{\color{ink}\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\color{ink}\large\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.6em}
+
+\newcommand{\dt}{\Delta t}
+\newcommand{\rate}{\dot{\gamma}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\note}[1]{\vspace{0.3em}\noindent{\color{accent2}\small\textsf{#1}}\vspace{0.3em}}
+
+\title{\vspace{-2em}\textbf{NNUI\_CELL}\\[0.3em]
+\large Addendum v0.3 --- Workstream-A Realizations and the\\
+\large Discrete Interface-Tension Design\\[0.6em]
+\normalsize Supplement to the v0.2 Specification (which remains canonical)}
+
+\author{R.~Forrestall (``Heat'')\\ \normalsize MIVIM Development --- \textit{Standards in Novel Design}}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This addendum records what building workstream~A --- the agent-facing API, its
+integration demo, and the tessellation stage --- forced into the discrete
+realization of NNUI\_CELL. The continuum theory of v0.1/v0.2 is again
+unchanged. Five corrections (C5--C9) join the normative set: the discrete
+realization of $E_{\text{fill}}$ with a wall-coverage stall predicate, plastic
+post-yield rest adaptation, bulk-transport binding, the latch's exact
+$\xi{=}1$ assignment, and radius conservation under lattice dilation. The
+final section is a \emph{design}, not a result: the discrete realization of
+$E_{\text{cohesion}}$ as boundary curvature flow, motivated by three measured
+failures of naive compactness mechanisms, with binary validation exits (T1--T4)
+that implementation must pass before the design is admitted as normative.
+Evidence levels are marked throughout: C5--C9 are validated
+(suite-green, screen-verified); the interface-tension design is internal
+reasoning awaiting its experiment.
+\end{abstract}
+
+\noindent\textcolor{rule}{\rule{\linewidth}{0.8pt}}
+
+\section{Position of this document}
+
+The v0.2 specification remains the canonical statement of the model. Everything
+here concerns \emph{discrete realization} --- the same relationship v0.2's
+corrections C1--C4 bear to v0.1. Workstream~A validated the API surface
+(milestones M1--M4: atomic grammar submission, the event-driven read path,
+LLM-driven layout, portable geometry-free cell records) and then confronted the
+layout semantics the prototype had deferred: the medium must actually fill its
+vessel, sizes must actually be solved from material state, and bound groups
+must actually cohere. Realizing those claims produced C5--C9 and exposed the
+one energy term still without a discrete form, $E_{\text{cohesion}}$.
+
+\section{Corrections C5--C9 (validated, normative)}
+
+\begin{enumerate}[leftmargin=2.2em,label=\textbf{C\arabic*.},start=5]
+
+\item \textbf{$E_{\text{fill}}$ is a quasi-static drive with a wall-coverage
+stall.} The fill phase advances matter outward at a rate that yields against
+solidity, $g = g_0\,(1-S)$, entering the predictor as displacement (per C2).
+While filling, the frame is effectively accelerating (the boot pour): $\xi$
+rebuild is suspended per the \S7.2 boundary condition, so the medium flows
+freely into void. Termination is \emph{pressure stall}, not an area target ---
+and the stall predicate may not fire while boundary spans remain unclaimed:
+edge-to-edge is part of $E_{\text{fill}}$'s definition
+($\rho\!\to\!1$ over $\Omega$), not a preference. Measured: with an area-target
+stall the settled screen claimed 50--75\% of the vessel; with the wall-coverage
+predicate, 95--100\%. Near walls the drive direction blends toward the local
+void (matter creeps along walls; corner zones are owned by void-seeking);
+applied globally, void-seeking pulls cells into elongated shards --- measured,
+rejected, and the restriction is therefore normative.
+
+\item \textbf{Post-yield flow is plastic.} While a layout region is awake
+(yielded), its material rest lengths follow realized geometry at a rate that
+yields against solidity, $\dot r_{\text{rest}} \propto (1-S)$; at rest the
+rests hold, elastic below yield. This is the discrete realization of
+shear-thinning post-yield flow ($n{<}1$): committed matter gets out of the way
+and takes its new shape; stiff matter keeps its shape. Without plasticity the
+fill phase fights permanent elastic memory of the spawn lattice and the medium
+cannot tile.
+
+\item \textbf{Binds transport bulk.} The deliberate \texttt{bind} operation is
+interfacial: it must move \emph{regions}, not points. A single-anchor spring
+fails in a plastic medium --- the anchor migrates through the region while the
+bulk never moves (measured: bound chains left 170--240\,px gaps). A
+stiffness-scaled attraction fails at rest --- compliance stiffening turns it
+into a slingshot (the compliance-at-rest failure class, third sighting;
+measured eruption at 140\,u/s). The normative form: a bounded, constant-scale
+quasi-static drive on \emph{all} particles of both bound regions, active until
+the pair sits adjacent, with stiff contacts preventing overlap. Cohesive
+groups then pack, solved.
+
+\item \textbf{The latch assigns $\xi = 1$ exactly.} \S7.3 writes ``set
+$\xi_i = 1$'' and means it. A latch that merely stops motion lets each
+region's $\xi$ carry its private settle history --- measured as
+identically-declared cells exporting different material state in their
+portable records (settle history leaking into the wire format). On latch
+engage, $\xi \gets 1$: structure is fully rebuilt at rest, and exported
+material state is a function of declaration and physics, not of arrival
+order.
+
+\item \textbf{Radius conservation under dilation.} A dilated lattice is not a
+porous point-cloud: when lattice spacing grows, effective particle radius
+grows with it, $r_p = \tfrac{1}{2}\,\bar\ell$ (with $\bar\ell$ the region's
+mean lattice spacing), clamped to a sane range. Without this, regions finger
+through each other's interiors and settle interleaved (measured: hull-overlap
+``stacked sheets''). Two consequences are part of the correction: the C1
+topological-guard tolerance must be \emph{proportional} to the contact rest
+(an absolute tolerance misclassifies ordinary residual prestress at dilated
+scale), and contact-search structures must follow the radius. The material
+radius is exposed through the read path so a renderer draws true material
+extent --- physical seams are seams, not voids.
+
+\end{enumerate}
+
+\note{Status: C5--C9 are validated --- the engine suite (35+ tests including
+all seven invariants, the four milestone harnesses, frame budget, and
+API-boundary determinism) is green with all five active, and the settled
+screen is verified programmatically at 95--100\% vessel claim.}
+
+\section{Design: $E_{\text{cohesion}}$ as boundary curvature flow}
+
+\subsection{The residual defect and why it points here}
+
+With C5--C9 active, one defect class remains, measured and reproducible:
+\emph{interleaving}. Arms of soft regions, stretched during early growth,
+freeze across neighbouring cells; per-region mean radius cannot seal
+non-uniformly stretched arms; vessel corners adjacent to such arms stay
+partially unclaimed. Nothing in the realized model penalizes elongation. In
+the continuum theory that penalty exists and has a name:
+\[
+E_{\text{cohesion}} \;=\; w_c \sum_{(i,j)\in\partial} \sigma_{ij}\,\ell_{ij},
+\]
+interface \emph{length} minimization --- surface tension. Foam tessellates
+because pressure fills while tension keeps every cell compact. We have built
+the pressure and not the tension.
+
+\subsection{Failed candidates (measured, excluded)}
+
+\begin{itemize}[leftmargin=1.4em]
+\item \emph{Global void-seeking} as a shape force: produces taffy shards ---
+it is a fill term, not a tension term, and only survives restricted to the
+wall band (C5).
+\item \emph{Radial roundness tension} (pull each particle toward the region's
+mean radius): isotropic, so it fights wall flattening and the fill drive;
+measured to collapse vessel claim to 70\% and break solved sizes. The error is
+structural: it penalizes \emph{radius variance}, but a wall-flattened tile has
+high radius variance and \emph{low perimeter}. The energy says perimeter.
+\end{itemize}
+
+\subsection{The design}
+
+Realize interface tension as \textbf{discrete curvature flow on region
+boundaries}:
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Boundary detection.} Per frame, a particle is a boundary
+particle of its region iff it has fewer than $B$ same-region neighbours
+within radius $\rho_n$ (existing spatial grid; index-order scan;
+deterministic).
+\item \textbf{Discrete curvature.} For boundary particle $i$, let $m_i$ be
+the mean position of its same-region \emph{boundary} neighbours within
+$\rho_b$. The discrete curvature vector is
+\[
+\kappa_i \;=\; m_i - x_i ,
+\]
+the boundary Laplacian: on a straight (wall-flattened or shared-interface)
+edge $\kappa_i \approx 0$; on a convex bulge $\kappa_i$ points inward; in a
+concave dent it points outward.
+\item \textbf{Tension step.} Quasi-static displacement (C2), boundary
+particles of awake regions only:
+\[
+\Delta x_i \;=\; \min\!\big(w_c'\,\norm{\kappa_i},\; c_{\max}\big)\,
+\hat\kappa_i\,\dt .
+\]
+Interior particles are untouched; the arrest phase and honest strain
+measurement are untouched; contacts and walls still project afterwards.
+\end{enumerate}
+
+\subsection{Why this succeeds where the candidates failed}
+
+Curvature flow minimizes perimeter directly: flat interfaces (shared seams,
+wall contact) carry no force, so it cannot fight wall conformity or tiling;
+bulges retract; dents fill; and a thin shard arm --- whose boundary curvature
+is everywhere high and inward --- retracts into the body of its cell. The
+predicted equilibrium is exactly the paper's stated consequence of
+$E_{\text{cohesion}}$: compact polygonal tiles, flat shared interfaces, and
+rounded free corners --- coalescence and menisci. Because the force vanishes
+on flat boundaries it terminates naturally under the deadband and latch; no
+new stall machinery is required. It is diffusive and therefore stable at a
+bounded step ($c_{\max}$), and deterministic by construction.
+
+\subsection{Validation exits (binary, pre-registered)}
+
+Implementation is admitted as normative only if all four pass:
+
+\begin{center}
+\begin{tabular}{@{}p{0.07\linewidth}p{0.85\linewidth}@{}}
+\toprule
+\textbf{T1} & \emph{No interleaving.} For every reference layout, pairwise
+convex-hull intersection area between settled cells is $<2\%$ of the smaller
+cell's area. \\
+\textbf{T2} & \emph{Corners claimed.} All four vessel corners pass the
+50\,px / 30\% matter standard in every layout. \\
+\textbf{T3} & \emph{Nothing regresses.} Vessel claim stays $\geq 90\%$ lit;
+solved-size ratios, bind adjacency, phenotype expression, frozen-raster rest,
+and the \S9 resize demonstration all hold. \\
+\textbf{T4} & \emph{The suite is the suite.} All engine tests green;
+bit-identical determinism preserved; the flicker-free sustained-rest window
+holds. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\note{Status: design only --- internal reasoning strength. T1--T4 are the
+experiment; the design is wrong if they fail, and the failure record joins
+this document's lineage the same way C1--C9 earned theirs.}
+
+\section{New constants and dials}
+
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Meaning & Status \\
+\midrule
+$g_0$ & fill drive scale (yields against $S$) & tuned (C5) \\
+$w_{\text{band}}$ & wall band for void-seeking & tuned (C5) \\
+$\theta_{\text{wall}}$ & wall-coverage stall threshold ($>90\%$) & tuned (C5) \\
+$p$ & plastic rest-adaptation rate ($\propto 1-S$) & tuned (C6) \\
+$g_b$ & bind bulk-drive scale (bounded, constant) & tuned (C7) \\
+$r_p$ & effective particle radius, $\tfrac{1}{2}\bar\ell$ & derived (C9) \\
+$B, \rho_n, \rho_b$ & boundary detection neighbourhood & design (T1--T4) \\
+$w_c', c_{\max}$ & curvature-flow weight and step clamp & design (T1--T4) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent As with the v0.2 operating point, the corrections are qualitative
+and forced by measured failures; the constants are tuned, not derived.
+
+\vspace{1em}
+\noindent\textcolor{rule}{\rule{\linewidth}{0.8pt}}
+\vspace{0.4em}
+
+\noindent{\small \textit{MIVIM Development --- Standards in Novel Design.}
+Addendum v0.3, July 2026; supplements the v0.2 specification, which remains
+canonical. All results referenced herein are reproducible from the repository
+sources (\texttt{engine/}, \texttt{demo/}) and their automated gates.}
+
+\end{document}

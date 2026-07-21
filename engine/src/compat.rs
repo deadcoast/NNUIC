@@ -35,4 +35,34 @@ impl World {
         }
         world
     }
+
+    /// Build a LAYOUT world from a parsed program in a vessel-shaped
+    /// container: E_fill enabled (the medium claims the whole vessel;
+    /// sizes solved from S), deliberate binds lowered to E_cohesion, and
+    /// jittered-grid spawn (C4). World height is fixed at 60 medium
+    /// units; width follows the vessel's aspect so the settled screen IS
+    /// the vessel, edge to edge.
+    pub fn from_layout(
+        layout: &crate::grammar::Layout,
+        vessel_w: f64,
+        vessel_h: f64,
+        seed: u64,
+    ) -> Self {
+        let mats = layout.to_materials();
+        let h = 60.0;
+        let aspect = (vessel_w / vessel_h).clamp(0.2, 5.0);
+        let w = h * aspect;
+        let mut world = World::from_materials(&mats, 5, w, h, seed);
+        world.fill_enabled = true;
+        world.set_area_targets();
+        let idx = |id: &str| layout.cells.iter().position(|c| c.id == id);
+        for op in &layout.ops {
+            if let crate::grammar::Op::Bind(a, b) = op {
+                if let (Some(ra), Some(rb)) = (idx(a), idx(b)) {
+                    world.binds.push((ra, rb));
+                }
+            }
+        }
+        world
+    }
 }

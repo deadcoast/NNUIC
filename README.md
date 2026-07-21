@@ -111,6 +111,7 @@ design.
 ```text
 engine/                              graduated engine crate (workstream A)
 latex/v0.2/NNUI_CELL_PoC_v0.2.tex   canonical formal specification (v0.2, current)
+latex/v0.3/                          addendum: corrections C5-C9 + E_cohesion design
 latex/v0.1/                          v0.1 spec (superseded; theory frozen here)
 analysis/001/                        R1+R2 headless Rust prototype + report
 analysis/002/                        R3 grammar + R4 expression registry + reports

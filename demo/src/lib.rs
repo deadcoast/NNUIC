@@ -1,13 +1,11 @@
 //! NNUI_CELL integration demo — the real engine compiled to WASM, driven
 //! exclusively through the public API (ledger REQ13). The renderer on the
-//! JS side is a stateless view of `Snapshot` data (Invariant 6): this
-//! module exports layout submission, ticking, and a flattened geometry
-//! buffer containing only what `Snapshot` exposes — centroid, hull,
-//! settled flag, strain, and the vessel map. No solver internals cross
-//! the boundary.
-//!
-//! The four programs are the R3 dashboard plus the three M3 LLM-emitted
-//! layouts — the demo literally replays agent-authored programs.
+//! JS side is a stateless view of `Snapshot` data (Invariant 6). Assets
+//! are real bytes digested through the R4 registry, so every cell's
+//! phenotype (chart / player / reader / image-viewer / germline panel) is
+//! genuinely expressed, not painted on. The vessel can be reshaped at
+//! runtime: the medium re-settles with NO further program call — the §9
+//! zero-cost-adaptation claim, live.
 
 use nnui_solver::api::{Engine, Extent, Lod};
 use std::cell::RefCell;
@@ -23,18 +21,47 @@ const GEOM_CAP: usize = 16384;
 
 thread_local! {
     static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
-    // fixed-capacity geometry buffer: allocated once, pointer stable
-    static GEOM: RefCell<Vec<f64>> =
-        RefCell::new(vec![0.0; GEOM_CAP]);
+    static GEOM: RefCell<Vec<f64>> = RefCell::new(vec![0.0; GEOM_CAP]);
 }
 
-/// Load one of the embedded agent programs. Returns the cell count, or 0
-/// on failure (which the harness-tested API makes impossible for these
-/// programs).
+fn phenotype_code(kind: &str) -> f64 {
+    match kind {
+        "chart" => 1.0,
+        "player" => 2.0,
+        "reader" => 3.0,
+        "image-viewer" => 4.0,
+        _ => 0.0, // germline panel
+    }
+}
+
+/// Register real byte samples for every asset the reference programs
+/// hold, so cells digest genuine content through the R4 registry.
+fn register_assets(e: &mut Engine) {
+    let csv: &[u8] = b"month,value\njan,120\nfeb,140\nmar,160\n";
+    for name in ["revenue", "kpi1", "kpi2", "kpi3"] {
+        e.register_asset(name, csv.to_vec());
+    }
+    e.register_asset("film", b"\x00\x00\x00\x18ftypisom\0\0\0\0".to_vec());
+    let png: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+    for name in ["c1", "c2", "c3", "c4"] {
+        e.register_asset(name, png.to_vec());
+    }
+    let txt = |s: &str| s.as_bytes().to_vec();
+    e.register_asset("title", txt("Board"));
+    e.register_asset("backlog", txt("todo items live here"));
+    e.register_asset("active", txt("in progress work"));
+    e.register_asset("finished", txt("done and shipped"));
+    e.register_asset("convos", txt("conversation list"));
+    e.register_asset("transcript", txt("the running dialogue"));
+    e.register_asset("draft", txt("compose a message"));
+}
+
+/// Load an embedded agent program. Returns the cell count (0 = failure).
 #[no_mangle]
 pub extern "C" fn demo_load(layout: u32, vessel_w: f64, vessel_h: f64) -> u32 {
     let src = LAYOUTS[layout as usize % LAYOUTS.len()];
     let mut e = Engine::new(Extent::viewport(vessel_w, vessel_h));
+    register_assets(&mut e);
     match e.submit(src) {
         Ok(_) => {
             let n = e.snapshot(Lod::Extents).cells.len() as u32;
@@ -45,8 +72,17 @@ pub extern "C" fn demo_load(layout: u32, vessel_w: f64, vessel_h: f64) -> u32 {
     }
 }
 
-/// One solver frame through the public API. Returns the realized
-/// post-arrest max strain (the honest instrument).
+/// Reshape the vessel (§9): the medium re-settles, no program call.
+#[no_mangle]
+pub extern "C" fn demo_resize(vessel_w: f64, vessel_h: f64) {
+    ENGINE.with(|slot| {
+        if let Some(e) = slot.borrow_mut().as_mut() {
+            e.resize_vessel(Extent::viewport(vessel_w, vessel_h));
+        }
+    });
+}
+
+/// One solver frame; returns realized post-arrest max strain.
 #[no_mangle]
 pub extern "C" fn demo_tick() -> f64 {
     ENGINE.with(|slot| {
@@ -56,8 +92,7 @@ pub extern "C" fn demo_tick() -> f64 {
     })
 }
 
-/// 1 when the engine's sustained settled predicate holds (the latch, not
-/// first-touch quiet).
+/// 1 when the sustained settled predicate (the latch) holds.
 #[no_mangle]
 pub extern "C" fn demo_settled() -> u32 {
     ENGINE.with(|slot| {
@@ -67,11 +102,10 @@ pub extern "C" fn demo_settled() -> u32 {
     })
 }
 
-/// Serialize the current Snapshot into the geometry buffer. Layout:
-/// `[scale, ox, oy, n_cells,` then per cell
-/// `[n_pts, cx, cy, settled, strain, x0, y0, x1, y1, ...]]`
-/// (all coordinates world-space; JS applies the vessel map).
-/// Returns the number of f64 values written.
+/// Serialize the Snapshot into the geometry buffer:
+/// `[scale, ox, oy, world_w, world_h, n_cells,` then per cell
+/// `[n_pts, cx, cy, settled, strain, phenotype_code, x0, y0, ...]]`.
+/// World-space values; JS applies the vessel map. Returns f64 count.
 #[no_mangle]
 pub extern "C" fn demo_refresh_geom() -> u32 {
     ENGINE.with(|slot| {
@@ -90,6 +124,8 @@ pub extern "C" fn demo_refresh_geom() -> u32 {
             push(s.map.scale, &mut i);
             push(s.map.ox, &mut i);
             push(s.map.oy, &mut i);
+            push(s.world.w, &mut i);
+            push(s.world.h, &mut i);
             push(s.cells.len() as f64, &mut i);
             for c in &s.cells {
                 push(c.boundary.len() as f64, &mut i);
@@ -97,9 +133,17 @@ pub extern "C" fn demo_refresh_geom() -> u32 {
                 push(c.centroid.y, &mut i);
                 push(c.settled as u32 as f64, &mut i);
                 push(c.strain, &mut i);
+                push(phenotype_code(&c.phenotype.kind), &mut i);
+                // hull vertices are particle CENTERS; matter extends
+                // one material radius beyond — inflate so the drawn cell
+                // is the true material extent (seams stay seams)
                 for p in &c.boundary {
-                    push(p.x, &mut i);
-                    push(p.y, &mut i);
+                    let dx = p.x - c.centroid.x;
+                    let dy = p.y - c.centroid.y;
+                    let d = (dx * dx + dy * dy).sqrt().max(1e-9);
+                    let f = (d + c.radius) / d;
+                    push(c.centroid.x + dx * f, &mut i);
+                    push(c.centroid.y + dy * f, &mut i);
                 }
             }
             i as u32

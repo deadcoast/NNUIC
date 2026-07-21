@@ -26,18 +26,21 @@
     border-radius: 6px; cursor: pointer; text-align: left; font: inherit;
   }
   button.active { border-color: #3fd9a6; color: #3fd9a6; }
+  .row { display: flex; gap: 6px; }
+  .row button { text-align: center; }
   #intent { font-style: italic; color: #9fc4b6; margin-top: 6px; }
   pre {
     margin-top: 6px; padding: 10px; background: #0d1714; color: #8fd9c0;
     border: 1px solid #14231d; border-radius: 6px; font-size: 11.5px;
     white-space: pre-wrap; word-break: break-word;
   }
-  main { position: relative; }
+  main { position: relative; background: #070c0a; }
+  #stage { position: absolute; inset: 0; margin: auto; }
   canvas { width: 100%; height: 100%; display: block; }
   #hud {
     position: absolute; top: 14px; right: 14px; text-align: right;
-    background: rgba(7,12,10,.72); padding: 10px 14px; border-radius: 8px;
-    border: 1px solid #14231d;
+    background: rgba(7,12,10,.78); padding: 10px 14px; border-radius: 8px;
+    border: 1px solid #14231d; z-index: 2;
   }
   #flag { font-weight: 700; letter-spacing: .12em; }
   #flag.settled { color: #3fd9a6; }
@@ -50,21 +53,30 @@
 </head>
 <body>
 <aside>
-  <h1>NNUI_CELL<small>agent-driven layout — the engine, live, via its
-  public API</small></h1>
+  <h1>NNUI_CELL<small>the framework, live: layout is solved from
+  material and containment — never authored</small></h1>
   <div class="sect"><b>AGENT INTENT</b><div id="intent"></div></div>
   <div class="sect"><b>EMITTED PROGRAM</b><pre id="program"></pre></div>
   <div class="sect"><b>LAYOUTS</b><div id="buttons"></div></div>
-  <div class="sect"><b>WHAT YOU ARE SEEING</b>
-  <pre>No coordinates exist in these programs.
-Every position is solved by the medium
-settling; the meter is the realized
-post-arrest strain. SETTLED means the
-jamming latch is engaged: exact rest,
-stable forever.</pre></div>
+  <div class="sect"><b>VESSEL — resize, no agent call</b>
+    <div class="row">
+      <button id="v-wide">wide</button>
+      <button id="v-square">square</button>
+      <button id="v-tall">tall</button>
+    </div>
+  </div>
+  <div class="sect"><b>WHAT THE FRAMEWORK IS DOING</b>
+  <pre>Sizes are SOLVED: soft matter (low S)
+claims space, stiff matter stays
+compact. Bound cells pack as one
+group. Cells digest their held bytes
+through the expression registry:
+chart, player, reader, image-viewer.
+Reshape the vessel and the medium
+re-settles itself — zero re-authoring.</pre></div>
 </aside>
 <main>
-  <canvas id="c"></canvas>
+  <div id="stage"><canvas id="c"></canvas></div>
   <div id="hud">
     <div id="flag" class="oozing">LOADING</div>
     <div id="meter"><div id="meterfill"></div></div>
@@ -77,6 +89,7 @@ const CASES = [
   { name: "dashboard",
     intent: "A wide revenue panel that fills remaining space, with " +
             "three cohesive KPI cells grouped beside it.",
+    cells: ["main", "k1", "k2", "k3"],
     src: `cell main { S:0.3 D:0.6 hold revenue }
 cell k1 { hold kpi1 }
 cell k2 { hold kpi2 }
@@ -87,6 +100,7 @@ contain { main k1 k2 k3 } in viewport` },
   { name: "kanban",
     intent: "A kanban board: a slim header above three equally " +
             "weighted columns that sit together as one group.",
+    cells: ["head", "todo", "doing", "done"],
     src: `cell head { S:0.6 hold title }
 cell todo { hold backlog }
 cell doing { hold active }
@@ -97,6 +111,7 @@ contain { head todo doing done } in viewport` },
   { name: "gallery",
     intent: "A media gallery: one large fluid featured player with a " +
             "strip of four cohesive thumbnails alongside it.",
+    cells: ["main", "t1", "t2", "t3", "t4"],
     src: `cell main { S:0.3 n:0.7 hold film }
 cell t1 { hold c1 }
 cell t2 { hold c2 }
@@ -109,27 +124,41 @@ contain { main t1 t2 t3 t4 } in viewport` },
   { name: "chat",
     intent: "A chat app: a stiff sidebar that keeps to itself, a soft " +
             "fluid transcript pane, and a near-locked composer bar.",
+    cells: ["sidebar", "pane", "composer"],
     src: `cell sidebar { S:0.7 D:0.2 hold convos }
 cell pane { S:0.3 n:0.7 hold transcript }
 cell composer { hold draft }
 solidity composer 0.9
 contain { sidebar pane composer } in viewport` },
 ];
-// The documented NNLG palette (analysis/004, the validated bench): the
-// jade slime family. Amber is reserved for vitrified lock only.
+// The documented NNLG palette (analysis/004): jade slime family; amber
+// is reserved for vitrified lock.
 const PALETTE = [[63,217,166],[70,199,217],[80,210,190],[95,225,205]];
+const KIND = ["panel", "chart", "player", "reader", "image"];
 
+const stage = document.getElementById("stage");
 const cvs = document.getElementById("c");
 const ctx = cvs.getContext("2d");
 const off = document.createElement("canvas");
 const octx = off.getContext("2d");
 let wasm = null, nCells = 0, active = 0, tickCount = 0;
+let vesselMode = "wide";
 
-function resize() {
-  cvs.width = cvs.clientWidth; cvs.height = cvs.clientHeight;
-  off.width = cvs.width; off.height = cvs.height;
+function applyVessel() {
+  const mw = document.querySelector("main").clientWidth;
+  const mh = document.querySelector("main").clientHeight;
+  let w = mw, h = mh;
+  if (vesselMode === "square") { w = h = Math.min(mw, mh); }
+  if (vesselMode === "tall") { w = Math.min(mw, mh * 0.62); h = mh; }
+  stage.style.width = w + "px";
+  stage.style.height = h + "px";
+  cvs.width = w; cvs.height = h;
+  off.width = w; off.height = h;
+  if (wasm) wasm.demo_resize(w, h);
+  document.querySelectorAll(".row button").forEach(b =>
+    b.classList.toggle("active", b.id === "v-" + vesselMode));
 }
-window.addEventListener("resize", resize);
+window.addEventListener("resize", applyVessel);
 
 function load(i) {
   active = i;
@@ -146,7 +175,9 @@ function readGeom() {
   const len = wasm.demo_refresh_geom();
   const f = new Float64Array(wasm.memory.buffer, wasm.demo_geom_ptr(), len);
   let i = 0;
-  const scale = f[i++], ox = f[i++], oy = f[i++], n = f[i++];
+  const scale = f[i++], ox = f[i++], oy = f[i++];
+  i += 2; // world w/h (informational)
+  const n = f[i++];
   const H = cvs.height;
   const mx = x => x * scale + ox;
   const my = y => H - (y * scale + oy);
@@ -155,7 +186,10 @@ function readGeom() {
     const np = f[i++];
     const cell = {
       cx: mx(f[i++]), cy: my(f[i++]),
-      settled: f[i++] > 0.5, strain: f[i++], pts: [],
+      settled: f[i++] > 0.5, strain: f[i++],
+      kind: KIND[f[i++] | 0] || "panel",
+      name: (CASES[active].cells[k] || "cell"),
+      pts: [],
     };
     for (let p = 0; p < np; p++) {
       const x = f[i++], y = f[i++];
@@ -166,24 +200,52 @@ function readGeom() {
   return cells;
 }
 
+function glyph(cell) {
+  ctx.save();
+  ctx.fillStyle = "rgba(7,18,14,0.85)";
+  ctx.font = "600 13px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  const y = cell.cy;
+  if (cell.kind === "chart") {
+    for (let b = 0; b < 4; b++) {
+      const h = 6 + b * 5;
+      ctx.fillRect(cell.cx - 16 + b * 9, y - 4 - h + 14, 6, h);
+    }
+  } else if (cell.kind === "player") {
+    ctx.beginPath();
+    ctx.moveTo(cell.cx - 8, y - 10);
+    ctx.lineTo(cell.cx + 12, y);
+    ctx.lineTo(cell.cx - 8, y + 10);
+    ctx.closePath();
+    ctx.fill();
+  } else if (cell.kind === "reader") {
+    for (let l = 0; l < 3; l++)
+      ctx.fillRect(cell.cx - 16, y - 8 + l * 7, 32, 3);
+  } else if (cell.kind === "image") {
+    ctx.strokeStyle = "rgba(7,18,14,0.85)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(cell.cx - 12, y - 10, 24, 20);
+    ctx.beginPath();
+    ctx.arc(cell.cx - 4, y - 3, 3, 0, 6.3);
+    ctx.fill();
+  }
+  ctx.fillText(cell.name + " · " + cell.kind, cell.cx, y + 30);
+  ctx.restore();
+}
+
 function render(cells) {
   ctx.clearRect(0, 0, cvs.width, cvs.height);
   const bg = ctx.createLinearGradient(0, 0, 0, cvs.height);
   bg.addColorStop(0, "#070c0a"); bg.addColorStop(1, "#0a1512");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, cvs.width, cvs.height);
   octx.clearRect(0, 0, off.width, off.height);
-  // One CONNECTED blob per cell, by construction: the filled hull polygon
-  // plumped with a fat round-joined stroke. Never discrete dots — a cell
-  // is one piece of medium (the analysis/003 lesson).
-  const plump = Math.max(cvs.width, cvs.height) * 0.045;
+  const plump = Math.max(cvs.width, cvs.height) * 0.012;
   cells.forEach((cell, k) => {
     const col = PALETTE[k % PALETTE.length];
     if (cell.pts.length < 3) return;
-    // bench color model: hue constant, falloff in ALPHA — the contrast
-    // pass then carves the meniscus without clipping the palette
     const g = octx.createRadialGradient(
       cell.cx, cell.cy, 0, cell.cx, cell.cy,
-      Math.max(cvs.width, cvs.height) * 0.28);
+      Math.max(cvs.width, cvs.height) * 0.3);
     g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},1)`);
     g.addColorStop(0.7, `rgba(${col[0]},${col[1]},${col[2]},0.75)`);
     g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0.35)`);
@@ -200,12 +262,10 @@ function render(cells) {
     octx.stroke();
     octx.fill();
   });
-  // The documented NNLG surface (analysis/004): metaball fuse pass for
-  // the silhouette, true palette re-composited inside it (contrast at
-  // this fill density would clip every hue to cyan), inner luminosity,
-  // then the top gloss that reads as wet liquid glass.
+  // NNLG surface: silhouette fuse, true palette re-composite, inner
+  // luminosity, top gloss (analysis/004 visual language)
   ctx.save();
-  ctx.filter = "blur(7px) contrast(11)";
+  ctx.filter = "blur(4px) contrast(11)";
   ctx.drawImage(off, 0, 0);
   ctx.restore();
   ctx.save();
@@ -226,16 +286,19 @@ function render(cells) {
   ctx.fillStyle = gl;
   ctx.fillRect(0, 0, cvs.width, cvs.height);
   ctx.restore();
+  // phenotypes: what each cell EXPRESSES, on the settled glass
+  cells.forEach(c => glyph(c));
 }
 
 let lastGeom = "";
 function frame() {
-  const strain = wasm.demo_tick();
-  tickCount++;
+  // several solver ticks per display frame while flowing: pacing only —
+  // motion is still the solver relaxing, never a tween
+  let strain = 0;
+  const steps = wasm.demo_settled() > 0 ? 1 : 4;
+  for (let s = 0; s < steps; s++) strain = wasm.demo_tick();
+  tickCount += steps;
   const cells = readGeom();
-  // Renderer is a stateless view of solver state (Invariant 6): when the
-  // state has not changed, there is nothing to repaint. This also keeps
-  // the settled raster literally frozen.
   window.__cells = cells; // read-only verification hook
   const key = JSON.stringify(cells);
   if (key !== lastGeom) {
@@ -247,7 +310,7 @@ function frame() {
   flag.textContent = settled ? "SETTLED" : "OOZING";
   flag.className = settled ? "settled" : "oozing";
   document.getElementById("meterfill").style.width =
-    Math.min(strain / 4, 1) * 100 + "%";
+    Math.min(strain / 8, 1) * 100 + "%";
   document.getElementById("stats").textContent =
     `${nCells} cells · strain ${strain.toFixed(3)} · tick ${tickCount}`;
   requestAnimationFrame(frame);
@@ -258,7 +321,7 @@ function frame() {
   const { instance } = await WebAssembly.instantiate(
     await res.arrayBuffer(), {});
   wasm = instance.exports;
-  resize();
+  applyVessel();
   const bts = document.getElementById("buttons");
   CASES.forEach((c, i) => {
     const b = document.createElement("button");
@@ -266,6 +329,12 @@ function frame() {
     b.onclick = () => load(i);
     bts.appendChild(b);
   });
+  for (const mode of ["wide", "square", "tall"]) {
+    document.getElementById("v-" + mode).onclick = () => {
+      vesselMode = mode;
+      applyVessel(); // reshapes the vessel: NO program call
+    };
+  }
   load(0);
   requestAnimationFrame(frame);
 })();

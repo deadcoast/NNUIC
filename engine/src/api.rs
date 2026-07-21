@@ -28,7 +28,7 @@ use crate::vec2::Vec2;
 /// prototype path).
 pub const SEED: u64 = 0xABCDEF;
 /// Settle frame budget, identical to the validated grammar path.
-const MAX_SETTLE_FRAMES: usize = 1500;
+const MAX_SETTLE_FRAMES: usize = 4000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProgramId(pub u64);
@@ -133,6 +133,9 @@ pub struct CellView {
     pub settled: bool,
     /// Realized post-arrest strain (max particle speed in the region).
     pub strain: f64,
+    /// Effective material radius: matter extends this far beyond the
+    /// hull of particle centers (continuum conservation under dilation).
+    pub radius: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -152,6 +155,10 @@ pub struct Snapshot {
 pub struct Engine {
     vessel: Extent,
     eco: Ecosystem,
+    /// Registered asset bytes: `hold` refs resolve here and are digested
+    /// through the real R4 registry (genome → phenotype). Unregistered
+    /// refs express germline, per the unknown-type semantics.
+    assets: std::collections::BTreeMap<String, Vec<u8>>,
     layout: Option<Layout>,
     world: Option<World>,
     events: Vec<Event>,
@@ -167,7 +174,17 @@ impl Engine {
     pub fn new(vessel: Extent) -> Engine {
         Engine {
             vessel,
-            eco: Ecosystem::core(),
+            eco: {
+                // the full registry: three core types plus the R4
+                // extension type, registered through the public path
+                let mut eco = Ecosystem::core();
+                eco.register_type(
+                    Box::new(crate::genetics::detect_image),
+                    Box::new(crate::genetics::express_image),
+                );
+                eco
+            },
+            assets: std::collections::BTreeMap::new(),
             layout: None,
             world: None,
             events: Vec::new(),
@@ -183,7 +200,9 @@ impl Engine {
     pub fn submit(&mut self, src: &str) -> Result<ProgramId, SubmitError> {
         let layout = grammar::parse(src).map_err(SubmitError::Parse)?;
         validate(&layout)?;
-        let world = layout.to_world(SEED); // deterministic lowering
+        // deterministic lowering into the vessel: E_fill on, binds real
+        let world =
+            World::from_layout(&layout, self.vessel.w, self.vessel.h, SEED);
         // -- commit point: nothing above mutated self --
         let n_cells = layout.cells.len();
         self.layout = Some(layout);
@@ -287,10 +306,17 @@ impl Engine {
                     convex_hull(&world.pos[reg.first..reg.first + reg.count])
                 }
             };
-            // Symbolic asset refs carry no bytes at M1 fidelity: sequencing
-            // yields the empty genome and expression yields germline — the
-            // R4 unknown-type semantics, not an error.
-            let genome = Genome::new();
+            // Held assets with registered bytes are digested through the
+            // real R4 registry (genome → phenotype). Unresolved refs and
+            // germline cells express germline — the unknown-type
+            // semantics, not an error.
+            let genome = match cell.content.as_deref() {
+                Some(asset) => match self.assets.get(asset) {
+                    Some(bytes) => self.eco.sequence(bytes),
+                    None => Genome::new(),
+                },
+                None => Genome::new(),
+            };
             let phenotype = self.eco.express(&genome);
             cells.push(CellView {
                 id: CellId(r as u64),
@@ -304,6 +330,7 @@ impl Engine {
                 // never a first-touch quiet frame.
                 settled: world.rest_t[r] >= REST_FRAMES,
                 strain,
+                radius: world.radius[reg.first],
             });
         }
         let settled = world.rest_t.iter().all(|&t| t >= REST_FRAMES);
@@ -332,6 +359,27 @@ impl Engine {
     /// Drain pending events (delivered in deterministic order).
     pub fn poll_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
+    }
+
+    /// Register asset bytes for a `hold` reference. Held cells digest
+    /// their asset through the real R4 registry — genome sequenced from
+    /// bytes, phenotype expressed deterministically.
+    pub fn register_asset(&mut self, name: &str, bytes: Vec<u8>) {
+        self.assets.insert(name.to_string(), bytes);
+    }
+
+    /// Viewport change (paper §9): the vessel reshapes and the medium
+    /// re-settles with NO further program call — zero-cost adaptation.
+    pub fn resize_vessel(&mut self, vessel: Extent) {
+        self.vessel = vessel;
+        if let Some(world) = self.world.as_mut() {
+            let h = 60.0;
+            let aspect = (vessel.w / vessel.h).clamp(0.2, 5.0);
+            world.resize(h * aspect, h);
+            self.cell_settled.iter_mut().for_each(|s| *s = false);
+            self.global_settled = false;
+            self.events.push(Event::Resettling(Cause::ViewportChange));
+        }
     }
 
     /// Export a cell as a portable record (DS04). The wire format is the
@@ -400,7 +448,8 @@ impl Engine {
             .clone();
         augmented.cells.push(fragment.cells.into_iter().next().unwrap());
         validate(&augmented)?;
-        let world = augmented.to_world(SEED);
+        let world =
+            World::from_layout(&augmented, self.vessel.w, self.vessel.h, SEED);
         // -- commit point --
         let n_cells = augmented.cells.len();
         self.layout = Some(augmented);
