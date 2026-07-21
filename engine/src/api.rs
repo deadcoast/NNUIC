@@ -28,7 +28,7 @@ use crate::vec2::Vec2;
 /// prototype path).
 pub const SEED: u64 = 0xABCDEF;
 /// Settle frame budget, identical to the validated grammar path.
-const MAX_SETTLE_FRAMES: usize = 4000;
+const MAX_SETTLE_FRAMES: usize = 8000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProgramId(pub u64);

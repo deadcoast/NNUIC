@@ -30,7 +30,7 @@ fn m1_api_matches_grammar_path_for_three_layouts() {
         let mut w = nnui_solver::solver::World::from_layout(
             &layout, 1280.0, 800.0, SEED,
         );
-        w.settle(4000);
+        w.settle(8000);
         let reference = w.state_hash();
         let api = api_hash(src);
         assert_eq!(

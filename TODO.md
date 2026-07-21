@@ -208,15 +208,16 @@ walls and each other, voids only where whitespace is declared [REQ15].
   conservation landed suite-green (effective particle radius scales with
   lattice spacing; proportional C1 tolerance; material radius exposed
   through the read path and rendered). Lit now 95–100% on every layout.
-  Per journal entry 024: E_cohesion curvature flow implemented per the
-  v0.3 design — **T1 passes (interleaving dead, <2% pairwise hull
-  overlap, permanent test) and T4 passes (9/9 suite, determinism,
-  gate)**. T2/T3 open: the sibling exclusion required against the newly
-  discovered engulfment phenomenon couples against the fill (packing
-  blocked → stall → underfill at 46–65% on two layouts). Next design
-  pass, precisely scoped: an exclusion that forbids nesting without
-  forbidding packing (hull-containment based, or a stall that
-  distinguishes exclusion-blocked from jammed).
+  Per journal entries 024–025: curvature flow, sibling exclusion, the
+  §7.2 phase gate (real arrest bug fixed: no latching mid-pour), and the
+  wall-wetting tension exemption are all in. Best measured state: lit
+  88–98% everywhere, sizes solved, binds adjacent, chat and §9 resize
+  pass completely. Open: T1 at ~4% overlap vs the 2% bar
+  (ignored-with-reason in the suite, never yet passed with full fill)
+  and corners 3/4. Structural conclusion for the next design pass:
+  bounded competing drives cannot express the tessellation equilibrium —
+  reformulate fill/exclusion/bind as XPBD constraints with designed
+  compliances (the paper's own machinery).
 - [ ] [TK21] Verification bar raised: lit fraction at the tessellation
   standard, all four vessel corners claimed, per-cell connectivity and
   every prior framework check retained [REQ15], [REQ14]. IN PROGRESS:

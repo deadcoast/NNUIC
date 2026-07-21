@@ -772,26 +772,26 @@ impl World {
         }
 
         // Sibling exclusion (topological, C1 class): two same-level cells
-        // may pack adjacent but never nest — a region's bulk must push
-        // its neighbours aside, not wrap around them (particle contacts
-        // act only at touching surfaces; engulfment slips past them
-        // through the void beside a slower sibling). Unilateral
-        // centroid-distance floor at the pair's combined half-extents,
-        // resolved as bounded bulk translation.
+        // may pack adjacent but never NEST. Detection is hull
+        // containment — adjacent tiles never contain each other's
+        // centroids, but a wrapping arm's convex hull covers the pocket
+        // as soon as the wrap begins, so real engulfment fires early and
+        // honest packing never does. Resolution: bounded symmetric bulk
+        // separation along the centroid axis (the wrap victim is pushed
+        // out of the shallow pocket; the wrapper is pushed back).
         if self.fill_enabled {
             const SEP_CAP: f64 = 8.0; // max separation speed, u/s
             let n_r = self.regions.len();
-            let mut half = vec![0.0f64; n_r];
-            for r in 0..n_r {
-                let reg = Region { ..self.regions[r] };
-                let c = centroids_pre[r];
-                for k in reg.first..reg.first + reg.count {
-                    let d = self.pos[k].sub(c).len();
-                    if d > half[r] {
-                        half[r] = d;
-                    }
-                }
-            }
+            let hulls: Vec<Vec<Vec2>> = (0..n_r)
+                .map(|r| {
+                    let reg = Region { ..self.regions[r] };
+                    convex_hull(
+                        &self.pos[reg.first..reg.first + reg.count],
+                    )
+                })
+                .collect();
+            let areas: Vec<f64> =
+                hulls.iter().map(|h| poly_area(h)).collect();
             for a in 0..n_r {
                 for b in (a + 1)..n_r {
                     if self.rest_t[a] >= REST_FRAMES
@@ -799,22 +799,33 @@ impl World {
                     {
                         continue;
                     }
-                    let rest = 0.85 * (half[a] + half[b]);
+                    // the exclusion enforces T1's own metric: pairwise
+                    // hull intersection as a fraction of the smaller
+                    // cell. Adjacent tiles overlap ~0; a bite or wrap
+                    // overlaps early and is pushed out proportionally.
+                    // KNOWN LIMIT (journal 025): as a bounded drive this
+                    // equilibrates against fill at ~4% overlap — above
+                    // the 2% T1 bar. The next design pass reformulates
+                    // fill/exclusion/bind as XPBD constraints.
+                    let inter =
+                        clip_convex(&hulls[a], &hulls[b]);
+                    let frac = poly_area(&inter)
+                        / areas[a].min(areas[b]).max(1.0);
+                    if frac < 0.005 {
+                        continue;
+                    }
                     let d = centroids_pre[b].sub(centroids_pre[a]);
-                    let dist = d.len();
-                    if dist < rest {
-                        let push = ((rest - dist) * 0.5)
-                            .min(SEP_CAP * dt);
-                        let dir = d.norm_or(Vec2::new(1.0, 0.0));
-                        let step = dir.scale(push);
-                        let ra = Region { ..self.regions[a] };
-                        for k in ra.first..ra.first + ra.count {
-                            self.pos[k] = self.pos[k].sub(step);
-                        }
-                        let rb = Region { ..self.regions[b] };
-                        for k in rb.first..rb.first + rb.count {
-                            self.pos[k] = self.pos[k].add(step);
-                        }
+                    let dir = d.norm_or(Vec2::new(1.0, 0.0));
+                    let push =
+                        SEP_CAP * dt * (frac * 10.0).min(1.0) * 0.5;
+                    let step = dir.scale(push);
+                    let ra = Region { ..self.regions[a] };
+                    for k in ra.first..ra.first + ra.count {
+                        self.pos[k] = self.pos[k].sub(step);
+                    }
+                    let rb = Region { ..self.regions[b] };
+                    for k in rb.first..rb.first + rb.count {
+                        self.pos[k] = self.pos[k].add(step);
                     }
                 }
             }
@@ -884,6 +895,19 @@ impl World {
                         continue;
                     }
                     let p = self.pos[k];
+                    // interfacial tension acts on FREE surfaces; matter
+                    // pressed against a wall is wetting the vessel, not
+                    // free boundary — and a corner-filling tip is high
+                    // curvature, so tension there would evacuate the
+                    // very wedges E_fill claims
+                    let wn = 2.5;
+                    if p.x < wn
+                        || p.y < wn
+                        || p.x > self.w - wn
+                        || p.y > self.h - wn
+                    {
+                        continue;
+                    }
                     let gx = (p.x * inv).floor() as i64;
                     let gy = (p.y * inv).floor() as i64;
                     let (mut sx, mut sy, mut nb) = (0.0, 0.0, 0u32);
@@ -1026,6 +1050,19 @@ impl World {
         // arrives. Strain is measured on realized post-arrest displacement
         // (Invariant 4, sharpened): a settled state is exactly still and
         // stable under continued stepping.
+        //
+        // Phase gate (§7.2): the fill phase is supra-yield BY DEFINITION —
+        // the frame is accelerating (the boot pour), so the deadband must
+        // not arrest actively driven matter and no region may latch
+        // mid-pour. Without this gate a stiff cell whose slow growth
+        // realizes below v_y is reverted every frame, reads quiet, and
+        // latches at spawn size, locked out of the fill it never did
+        // (measured: kanban's head frozen at area 17 while columns grew).
+        if filling {
+            for r in 0..self.regions.len() {
+                self.rest_t[r] = 0;
+            }
+        } else {
         for r in 0..self.regions.len() {
             // v_y = v0·ξ·(1 + c_ξ·ξ): the structure ratchet widens the
             // arrest band as ξ matures (bench-validated shape, paper v0.2
@@ -1075,6 +1112,7 @@ impl World {
                 }
                 self.rest_t[r] = 0;
             }
+        }
         }
     }
 
@@ -1129,6 +1167,104 @@ impl World {
     pub fn n_particles(&self) -> usize {
         self.pos.len()
     }
+}
+
+/// Deterministic convex hull (monotone chain), CCW. Used by the sibling
+/// exclusion; the API layer keeps its own copy for the read path.
+fn convex_hull(points: &[Vec2]) -> Vec<Vec2> {
+    let mut pts: Vec<Vec2> = points.to_vec();
+    pts.sort_by(|a, b| {
+        a.x.partial_cmp(&b.x)
+            .unwrap()
+            .then(a.y.partial_cmp(&b.y).unwrap())
+    });
+    pts.dedup();
+    if pts.len() < 3 {
+        return pts;
+    }
+    let cross = |o: Vec2, a: Vec2, b: Vec2| -> f64 {
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+    };
+    let mut lower: Vec<Vec2> = Vec::new();
+    for &p in &pts {
+        while lower.len() >= 2
+            && cross(lower[lower.len() - 2], lower[lower.len() - 1], p)
+                <= 0.0
+        {
+            lower.pop();
+        }
+        lower.push(p);
+    }
+    let mut upper: Vec<Vec2> = Vec::new();
+    for &p in pts.iter().rev() {
+        while upper.len() >= 2
+            && cross(upper[upper.len() - 2], upper[upper.len() - 1], p)
+                <= 0.0
+        {
+            upper.pop();
+        }
+        upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower
+}
+
+/// Shoelace area of a polygon.
+fn poly_area(p: &[Vec2]) -> f64 {
+    let n = p.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut a = 0.0;
+    for i in 0..n {
+        let q = p[(i + 1) % n];
+        a += p[i].x * q.y - q.x * p[i].y;
+    }
+    a.abs() / 2.0
+}
+
+/// Sutherland–Hodgman clip of `subject` against convex CCW `clip`.
+fn clip_convex(subject: &[Vec2], clip: &[Vec2]) -> Vec<Vec2> {
+    let mut out: Vec<Vec2> = subject.to_vec();
+    let n = clip.len();
+    for i in 0..n {
+        if out.is_empty() {
+            break;
+        }
+        let a = clip[i];
+        let b = clip[(i + 1) % n];
+        let inside = |p: Vec2| -> bool {
+            (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) >= 0.0
+        };
+        let input = std::mem::take(&mut out);
+        let m = input.len();
+        for j in 0..m {
+            let cur = input[j];
+            let prev = input[(j + m - 1) % m];
+            let cur_in = inside(cur);
+            let prev_in = inside(prev);
+            if cur_in != prev_in {
+                let d1 = Vec2::new(cur.x - prev.x, cur.y - prev.y);
+                let d2 = Vec2::new(b.x - a.x, b.y - a.y);
+                let denom = d1.x * d2.y - d1.y * d2.x;
+                if denom.abs() > 1e-12 {
+                    let t = ((a.x - prev.x) * d2.y
+                        - (a.y - prev.y) * d2.x)
+                        / denom;
+                    out.push(Vec2::new(
+                        prev.x + d1.x * t,
+                        prev.y + d1.y * t,
+                    ));
+                }
+            }
+            if cur_in {
+                out.push(cur);
+            }
+        }
+    }
+    out
 }
 
 // helper: shallow-copy a CKind (all Copy fields) so we can project without

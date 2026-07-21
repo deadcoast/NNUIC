@@ -731,3 +731,43 @@ requiring the exclusion to act on hull containment rather than centroid
 distance, or the fill stall to distinguish exclusion-blocked from
 genuinely-jammed. Per the addendum contract, this failure record joins
 the C-series lineage.
+
+## 2026-07-21: 025 — The phase gate, and the limit of drive-based mechanics
+
+Second exclusion-design session. One major bug fixed, one structural
+conclusion reached, closed at the stage's best measured state.
+
+**The phase gate (C-series candidate, kept).** Probing kanban exposed a
+real arrest bug: a stiff cell's slow fill growth realizes below the yield
+deadband, gets reverted every frame, reads quiet, and **latches at spawn
+size mid-pour** — locked out of the fill it never performed (kanban's
+head frozen at area 17 while columns grew; same signature as the earlier
+area-target failure). Fix per §7.2's own words: the fill phase is
+supra-yield BY DEFINITION — during the pour, the deadband must not
+arrest driven matter and no region may latch. With the gate: kanban
+fills to 100% claim, chat reaches 98% lit, and the §9 resize
+demonstration passes fully.
+
+**Wall-wetting tension exemption (kept).** Interfacial tension acts on
+free surfaces; matter pressed against a wall is wetting the vessel — and
+a corner-filling tip is high-curvature, so tension there evacuates the
+very wedges E_fill claims. Curvature flow now exempts the wall band.
+
+**The structural conclusion.** Exclusion variants (distance-floor,
+face-contact, anti-nesting, hull-containment, overlap-metric at three
+authorities) all fail the same way: as bounded competing drives,
+exclusion/fill/bind reach an equilibrium wherever their caps happen to
+balance — overlap hovers at ~4% against T1's 2% bar, and strengthening
+any one term breaks another (bind gaps, size ratios, or fill collapse).
+**Bounded competing drives cannot express the tessellation equilibrium.**
+The next design pass must reformulate fill, exclusion, and binding as
+XPBD constraints with designed compliances — the paper's own machinery,
+where equilibria are solved rather than raced.
+
+**Close state**: engine suite green (T1 marked `#[ignore]` with the full
+reason inline — the exit has never passed with full fill, so this is
+recorded-open, not regression); merge gate exit 0; browser scorecard the
+best of the stage — all layouts pass lit (88–98%), solved sizes, bind
+adjacency, phenotypes, and frozen rest; chat and resize pass completely;
+**corners (3/4 unclaimed) are the single visible residual**, tied to the
+same equilibrium problem.

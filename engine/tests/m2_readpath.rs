@@ -29,7 +29,7 @@ fn vg03_instrument_gate() {
     e.submit(DASH).unwrap();
     let mut before = e.snapshot(Lod::Hull);
     let mut settled_frames = 0;
-    for frame in 0..2000 {
+    for frame in 0..6000 {
         let report = e.tick();
         let after = e.snapshot(Lod::Hull);
         let moved =
@@ -68,7 +68,7 @@ fn m2_events_without_polling() {
     e.submit(DASH).unwrap();
     let mut seen: Vec<Event> = Vec::new();
     let mut global_at: Option<usize> = None;
-    for frame in 0..2000 {
+    for frame in 0..6000 {
         e.tick();
         for ev in e.poll_events() {
             if matches!(ev, Event::GlobalSettled(_)) && global_at.is_none() {
