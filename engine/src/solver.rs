@@ -771,6 +771,156 @@ impl World {
             }
         }
 
+        // Sibling exclusion (topological, C1 class): two same-level cells
+        // may pack adjacent but never nest — a region's bulk must push
+        // its neighbours aside, not wrap around them (particle contacts
+        // act only at touching surfaces; engulfment slips past them
+        // through the void beside a slower sibling). Unilateral
+        // centroid-distance floor at the pair's combined half-extents,
+        // resolved as bounded bulk translation.
+        if self.fill_enabled {
+            const SEP_CAP: f64 = 8.0; // max separation speed, u/s
+            let n_r = self.regions.len();
+            let mut half = vec![0.0f64; n_r];
+            for r in 0..n_r {
+                let reg = Region { ..self.regions[r] };
+                let c = centroids_pre[r];
+                for k in reg.first..reg.first + reg.count {
+                    let d = self.pos[k].sub(c).len();
+                    if d > half[r] {
+                        half[r] = d;
+                    }
+                }
+            }
+            for a in 0..n_r {
+                for b in (a + 1)..n_r {
+                    if self.rest_t[a] >= REST_FRAMES
+                        && self.rest_t[b] >= REST_FRAMES
+                    {
+                        continue;
+                    }
+                    let rest = 0.85 * (half[a] + half[b]);
+                    let d = centroids_pre[b].sub(centroids_pre[a]);
+                    let dist = d.len();
+                    if dist < rest {
+                        let push = ((rest - dist) * 0.5)
+                            .min(SEP_CAP * dt);
+                        let dir = d.norm_or(Vec2::new(1.0, 0.0));
+                        let step = dir.scale(push);
+                        let ra = Region { ..self.regions[a] };
+                        for k in ra.first..ra.first + ra.count {
+                            self.pos[k] = self.pos[k].sub(step);
+                        }
+                        let rb = Region { ..self.regions[b] };
+                        for k in rb.first..rb.first + rb.count {
+                            self.pos[k] = self.pos[k].add(step);
+                        }
+                    }
+                }
+            }
+        }
+
+        // E_cohesion (addendum v0.3 design): interface tension as
+        // boundary curvature flow. Boundary particles are detected by
+        // same-region neighbour deficit; the discrete curvature is the
+        // boundary Laplacian κ_i = mean(boundary neighbours) − x_i; the
+        // tension step is a bounded quasi-static displacement along κ
+        // (C2). Flat interfaces carry no force — this cannot fight wall
+        // conformity or tiling; bulges retract, dents fill, shard arms
+        // collapse. Terminates naturally as κ→0 under deadband and latch.
+        if self.fill_enabled {
+            const B_NEIGHBOURS: u32 = 6;
+            const W_TENSION: f64 = 4.0;
+            const C_MAX: f64 = 3.0;
+            use std::collections::HashMap;
+            let inv = 1.0 / self.cell;
+            let mut tgrid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+            for i in 0..self.pos.len() {
+                let gx = (self.pos[i].x * inv).floor() as i64;
+                let gy = (self.pos[i].y * inv).floor() as i64;
+                tgrid.entry((gx, gy)).or_default().push(i);
+            }
+            let span = 3i64;
+            let mut boundary = vec![false; self.pos.len()];
+            for r in 0..self.regions.len() {
+                if self.rest_t[r] >= REST_FRAMES {
+                    continue;
+                }
+                let reg = Region { ..self.regions[r] };
+                let spacing = 2.0 * self.radius[reg.first];
+                let rn2 = (1.7 * spacing).powi(2);
+                for k in reg.first..reg.first + reg.count {
+                    let p = self.pos[k];
+                    let gx = (p.x * inv).floor() as i64;
+                    let gy = (p.y * inv).floor() as i64;
+                    let mut cnt = 0u32;
+                    for dy in -span..=span {
+                        for dx in -span..=span {
+                            if let Some(b) = tgrid.get(&(gx + dx, gy + dy)) {
+                                for &j in b {
+                                    if j != k && self.region_of[j] == r {
+                                        let d = self.pos[j].sub(p);
+                                        if d.dot(d) < rn2 {
+                                            cnt += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    boundary[k] = cnt < B_NEIGHBOURS;
+                }
+            }
+            let mut disp = vec![Vec2::zero(); self.pos.len()];
+            for r in 0..self.regions.len() {
+                if self.rest_t[r] >= REST_FRAMES {
+                    continue;
+                }
+                let reg = Region { ..self.regions[r] };
+                let spacing = 2.0 * self.radius[reg.first];
+                let rb2 = (2.2 * spacing).powi(2);
+                for k in reg.first..reg.first + reg.count {
+                    if !boundary[k] {
+                        continue;
+                    }
+                    let p = self.pos[k];
+                    let gx = (p.x * inv).floor() as i64;
+                    let gy = (p.y * inv).floor() as i64;
+                    let (mut sx, mut sy, mut nb) = (0.0, 0.0, 0u32);
+                    for dy in -span..=span {
+                        for dx in -span..=span {
+                            if let Some(b) = tgrid.get(&(gx + dx, gy + dy)) {
+                                for &j in b {
+                                    if j != k
+                                        && self.region_of[j] == r
+                                        && boundary[j]
+                                    {
+                                        let d = self.pos[j].sub(p);
+                                        if d.dot(d) < rb2 {
+                                            sx += self.pos[j].x;
+                                            sy += self.pos[j].y;
+                                            nb += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if nb >= 2 {
+                        let m =
+                            Vec2::new(sx / nb as f64, sy / nb as f64);
+                        let kappa = m.sub(p);
+                        let mag =
+                            (W_TENSION * kappa.len()).min(C_MAX) * dt;
+                        disp[k] = kappa.norm_or(Vec2::zero()).scale(mag);
+                    }
+                }
+            }
+            for k in 0..self.pos.len() {
+                self.pos[k] = self.pos[k].add(disp[k]);
+            }
+        }
+
         // Post-yield flow is plastic (n < 1 realization): while a layout
         // region is awake, its material rest lengths follow the realized
         // geometry at a rate that yields against S. Stiff matter keeps its

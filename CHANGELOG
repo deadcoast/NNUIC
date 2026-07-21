@@ -692,3 +692,42 @@ v0.2 specification, which remains canonical. Contents:
 
 Stage 6 next step is now specified work, not exploration: implement
 boundary curvature flow against T1–T4.
+
+## 2026-07-20: 024 — Curvature flow implemented; T1 and T4 pass; T2/T3 open
+
+The E_cohesion design implemented exactly as specified (boundary
+detection by neighbour deficit, discrete curvature as the boundary
+Laplacian, bounded quasi-static tension step) and run against the
+pre-registered exits. The contract worked as intended — it caught a real
+phenomenon the design had not anticipated and stopped an over-claimed
+result:
+
+- **Engulfment discovered.** With compactness active, fast soft cells
+  wrap *around* slower siblings through the void beside them (particle
+  contacts act only at touching surfaces; the bulk never pushes).
+  Measured: a gallery thumbnail 100% inside main's hull. Foam physics
+  permits nesting; sibling cells must tile. Added the **sibling
+  exclusion** — a region-level topological constraint (C1 class): a
+  centroid-distance floor resolved as bounded bulk translation.
+- **T1 PASS** (engine-level, all four layouts): pairwise settled-hull
+  intersection < 2% of the smaller cell — the interleaving defect that
+  triggered this whole line of work is dead. New permanent test:
+  `engine/tests/t_cohesion.rs`.
+- **T4 PASS**: full suite 9/9 groups green with curvature flow, sibling
+  exclusion, and all prior mechanisms live; determinism preserved; merge
+  gate exit 0.
+- **T2/T3 FAIL, recorded**: vessel claim dropped to 46–65% on
+  gallery/chat (from 95–100% pre-cohesion) and corners remain partial.
+  Diagnosis: the exclusion needed against engulfment couples against the
+  fill — it blocks packing, the stall hard-cap fires, the vessel
+  underfills. Two alternative exclusion geometries (face-contact sum,
+  anti-nesting max) were probed and destabilized other exits; iteration
+  stopped per the anti-roulette rule.
+
+State kept in tree: the T1-green configuration (correctness property won;
+fill quantity open). The open problem for the next design pass is precise:
+**an exclusion that forbids nesting without forbidding packing** — likely
+requiring the exclusion to act on hull containment rather than centroid
+distance, or the fill stall to distinguish exclusion-blocked from
+genuinely-jammed. Per the addendum contract, this failure record joins
+the C-series lineage.
