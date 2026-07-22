@@ -232,6 +232,61 @@ holds. \\
 experiment; the design is wrong if they fail, and the failure record joins
 this document's lineage the same way C1--C9 earned theirs.}
 
+\section{Design revision D2: constraint-based tessellation}
+
+\note{Added after implementation of the curvature-flow design. Status of the
+first pass, honestly: curvature flow itself behaved as designed (arms
+retract, compact cells) and survives; but the accompanying drives ---
+fill, sibling exclusion, bind transport --- were bounded competing
+displacements, and five exclusion formulations at multiple authorities all
+equilibrated \emph{wherever their caps happened to balance} (pairwise hull
+overlap hovering near 4\% against T1's 2\% bar, with any strengthening
+breaking bind adjacency, solved sizes, or fill). The measured conclusion:
+\textbf{bounded competing drives cannot express the tessellation
+equilibrium.} Two genuine corrections were also forced and are kept: the
+\emph{phase gate} (the fill phase is supra-yield by definition --- no
+deadband arrest, no latching mid-pour; without it a stiff cell's sub-yield
+growth is reverted every frame and it latches at spawn size), and the
+\emph{wall-wetting exemption} (tension acts on free surfaces; matter
+pressed against the vessel is wetting it, and tension at a corner tip
+evacuates the wedge $E_{\text{fill}}$ claims).}
+
+\subsection{The reformulation}
+
+Move the three competing terms \emph{into} the XPBD projection loop, where
+equilibria are solved rather than raced:
+
+\begin{enumerate}[leftmargin=1.6em]
+\item \textbf{Fill as a per-region area constraint} (the paper's
+volume/occupancy constraint, \S5.1). Per region $r$:
+$C_r = A_r(\mathbf{x}) - A_r^{*}$, with $A_r$ the area of the region's
+ordered boundary polygon (convex hull at this fidelity) and targets solved
+from material state, $A_r^{*} \propto (1-S_r)^2$ over the vessel area.
+The gradient on hull vertex $v_i$ is the standard polygon-area gradient
+$\tfrac{1}{2}\,\mathrm{perp}(v_{i+1}-v_{i-1})$; one scalar multiplier per
+region per frame. Because the multiplier accumulates inside the solve,
+elastic pullback cannot starve growth --- the stuck-stiff-cell failure
+class dies structurally. Sizes remain \emph{solved}: authority lives in
+the targets, not in growth-rate races.
+\item \textbf{Exclusion largely for free.} Under hull-area constraints,
+wrapping is self-defeating: enclosed foreign space counts against the
+wrapper's own area budget while the enclosed cell's constraint pushes back
+from inside. Particle non-penetration (C1) plus conserved radii (C9)
+handle contact; an explicit exclusion survives only as a light correction
+for measured bites, if any remain.
+\item \textbf{Bind as a plain XPBD distance constraint} (few anchor pairs,
+constant soft compliance --- never stiffness-scaled, per C7). With area
+protected by its own constraint, a region can no longer comply by
+deforming around a migrating anchor: translation is the only compliant
+path, so binds transport bulk \emph{because of} the constraint coupling,
+not despite it.
+\end{enumerate}
+
+Curvature flow (\S3), the phase gate, the wall-coverage stall (C5), plastic
+rests (C6), and radius conservation (C9) are unchanged. The same
+pre-registered exits T1--T4 gate this revision; T1 remains recorded-open
+until it passes with full fill.
+
 \section{New constants and dials}
 
 \begin{center}\small

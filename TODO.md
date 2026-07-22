@@ -217,12 +217,28 @@ walls and each other, voids only where whitespace is declared [REQ15].
   and corners 3/4. Structural conclusion for the next design pass:
   bounded competing drives cannot express the tessellation equilibrium —
   reformulate fill/exclusion/bind as XPBD constraints with designed
-  compliances (the paper's own machinery).
+  compliances (the paper's own machinery). DONE as design D2 (addendum
+  §5) and implemented per journal entry 026: area constraints + anchor
+  binds, drives deleted; suite 9/9 first run, corners breakthrough (4/4
+  on two layouts). Journal entry 027: the in-loop overlap constraint
+  implemented as exact convex-polygon SAT, and the seven structural
+  defects it exposed fixed at the mechanism (XPBD signs, latch-based
+  settle predicate, interface binds, radius-conservation clamp, bounded
+  plastic ratchet, inset-normalized area targets, rigid-at-rest
+  infinite-mass semantics + hull-level C1 guard). T1 19.3% → 3.2%
+  worst pair; T3 lit passes everywhere for the first time (93–97%);
+  occupancy at rest 0.994; resize 100–200 ms. Open: T1 residual 3.2%
+  and T2 corners (regressed to 2–3/4 unclaimed as inset targets
+  removed the illegal over-pressure) — both trace to spawn seeding;
+  next mechanism named: share-aware spawn placement in `from_layout`
+  (deterministic, grammar-order derived, no authored positions).
 - [ ] [TK21] Verification bar raised: lit fraction at the tessellation
   standard, all four vessel corners claimed, per-cell connectivity and
   every prior framework check retained [REQ15], [REQ14]. IN PROGRESS:
-  bar raised (lit ≥ 80%, four-corner claim); chat and resize pass fully
-  at 100% lit; dashboard/kanban/gallery pass all checks except corners.
+  bar raised (lit ≥ 80%, four-corner claim); per journal entry 027 the
+  lit bar passes on every layout for the first time (93–97%), chat and
+  resize pass fully; the single open browser check is corners (2–3/4
+  unclaimed) plus engine T1 at 3.2% vs the 2% bar.
 - [x] [TK22] Spec currency: the session's normative discoveries (E_fill
   discrete realization, plastic post-yield rests, bulk-transport binds,
   latch ξ assignment) recorded as a v0.3 addendum to the paper — the

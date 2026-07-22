@@ -771,3 +771,120 @@ best of the stage — all layouts pass lit (88–98%), solved sizes, bind
 adjacency, phenotypes, and frozen rest; chat and resize pass completely;
 **corners (3/4 unclaimed) are the single visible residual**, tied to the
 same equilibrium problem.
+
+## 2026-07-21: 026 — D2 implemented: constraint-based tessellation
+
+The D2 design (addendum §5, written before code) implemented: fill as
+per-region XPBD **area constraints** over ordered hull vertices (targets
+∝ (1−S)² — sizes solved through targets, not growth races; one scalar
+multiplier per region, polygon-area gradients), binds as plain distance
+constraints on anchor triples with constant soft compliance, all drives
+deleted. First run: **suite 9/9 green, settle faster (660 vs 810
+frames), and the corners breakthrough — dashboard and kanban claim all
+four corners for the first time in the stage** (area pressure pushes
+hull vertices into wedges exactly as the design argued). The
+stuck-stiff-cell failure class is dead structurally: the constraint's
+multiplier accumulates inside the solve, so elastic pullback cannot
+starve growth.
+
+Honest scorecard against the pre-registered exits, D2 vs the drive
+formulation it replaces:
+
+- **Corners (T2): D2 wins decisively** — 4/4 on two layouts, 3/4 on the
+  others (drives never exceeded 1/4 claimed).
+- **Overlap (T1): D2 currently loses** — 19.3% vs the drives' 4%.
+  Diagnosed: outlier hull vertices stretch a region's hull over its
+  neighbour even where matter doesn't interpenetrate; "wrapping is
+  self-defeating" bounds the incentive but not the geometry.
+- Lit within 1–2 points of the bar on two layouts; resize timing open.
+- One more lesson banked: a per-frame depth-push added OUTSIDE the loop
+  to fix T1 made it worse (53.7%) and broke the suite — confirming the
+  D2 thesis at finer grain: **every competing term must live inside the
+  projection loop.** The next step is precisely that: pairwise overlap
+  as a true in-loop XPBD constraint, its multiplier accumulating in the
+  same Gauss–Seidel sweeps as the area constraints.
+
+State kept: clean D2 (suite 9/9, gate green, T1 ignored-with-reason).
+The architecture is now the paper's own — constraints, compliances, one
+solve — and each remaining defect has a named in-loop mechanism.
+
+## 2026-07-21: 027 — the in-loop overlap constraint, and the seven
+structural defects it exposed
+
+The mechanism named at the close of 026 — pairwise overlap as a true
+in-loop XPBD constraint — implemented and driven to its honest limit.
+Getting the constraint to be *correct* exposed a chain of structural
+defects, each found by measurement, each fixed at the mechanism (no
+parameter roulette survived into the close state):
+
+1. **Exact convex-polygon SAT.** A 4-axis heuristic (x, y, centroid
+   axis, perp) both misses real overlap and pushes pairs that do not
+   overlap — for convex hulls the separating axis is an *edge normal of
+   one of the hulls*. The constraint now tests every edge normal of
+   both hulls; depth is true minimum-translation depth.
+2. **XPBD sign error.** The first implementation moved both regions
+   *toward* each other (gradient signs inverted) — a compactor, not an
+   exclusion; sustained 25 u/s limit cycle. Signs fixed; converges.
+3. **Latch-based settle predicate.** `settle()` counted speed-quiet
+   frames, which trigger during the stalled fill tail — it returned
+   between fill close and latch maturity, and the "settled" state kept
+   consolidating (m1 idempotence broke). The predicate is now the
+   latch itself: all regions latched + sub-eps speed, never mid-pour.
+4. **Binds demand adjacency, not superposition.** The D2 anchor triples
+   at rest 0 pulled lattice-coincident particles together — bound pairs
+   measured at SAT depth 26, near-total overlap. A bind is now one
+   distance constraint on the deterministic nearest particle pair at
+   contact rest: E_cohesion across the interface.
+5. **Radius conservation uncapped.** r_p = ½·spacing was clamped at
+   2.0 while target dilation needs ~3.4 — beyond the clamp the lattice
+   is porous and fingering is geometrically open. Clamp lifted to the
+   real dilation range.
+6. **The plastic ratchet is bounded by the solved share.** Rests
+   memorized transient overshoot; summed natural matter reached 1.6×
+   the vessel and separation became *infeasible* — the C1 guard then
+   rightly never let the over-packed medium arrest. Rests now cap at
+   the target-consistent spacing (cohesion) and corner reach (turgor).
+7. **Area targets share the inset domain.** Targets were shares of the
+   full vessel, but wall constraints hold hull centers a radius off the
+   boundary — hulls were commanded to cover 5760 units of a ~4733-unit
+   domain; overlap was the only satisfying state. Targets now
+   normalize to the vessel inset by the radius band (fix-point).
+
+Plus the completion of **rigid-at-rest semantics**: latched regions are
+infinite-mass in every surviving pairwise constraint (contacts/binds),
+and contacts/walls between latched matter are *held*, not re-projected —
+a cage-latched jam keeps its residual as bounded prestress (§7.3)
+instead of erupting on the next tick (measured: 37.8 u/s eruption at
+the first cage recompute; 13 CellSettled events for 4 cells). A new
+hull-level C1 guard keeps interleaving pairs from latching while they
+still move; cage precedence intact (clearing it livelocked 30k frames).
+
+**Scorecard against the exits** (all layouts, engine + browser):
+
+- Suite: **9/9 groups green**, settle idempotent, events clean.
+- **T1: 19.3% → 3.2%** worst pair (bar 2%; not yet met — remaining
+  overlap is cage-latched jam seeded by spawn placement).
+- **T3 lit: PASSES everywhere for the first time** — 93–97% (was 78–79
+  failing on kanban/gallery). Occupancy at rest: 0.994.
+- Resize re-settles in 100–200 ms, program-unchanged: PASS.
+- Chat: full PASS. **T2 corners regressed**: 3/4 unclaimed on
+  dashboard/kanban/chat, 2/4 gallery (026 had 4/4 on two layouts) —
+  the inset targets removed the over-pressure that force-seated
+  vertices into wedges. The render is a true tessellation now
+  (edge-to-edge tiles, shared seams; verified by eye).
+
+**Recorded dead ends (anti-roulette, one measurement each):** slack
+tightening (no effect — residual is load-dominated), contact-grade
+overlap stiffness under the broken SAT (chaos), pour ramps in two
+shapes — growth relative to own size (22%) and synchronized
+target-share increments (33.5%) — both *worse* than the instant target
+(3.2%): the jam is seeded by spawn placement, not pour speed. Corner
+wall-wetting (offsets relax to r/2 in corners) fixed dashboard corners
+but snapped T1 back to 19.3%; reverted.
+
+**Open, with named mechanisms:** T1's residual 3.2% and T2's corners
+both trace to *spawn seeding* — a cell spawning inside the territory a
+larger cell must claim gets engulfed regardless of pour dynamics, and
+corner claim needs seeded pressure toward the wedges. Next session:
+share-aware spawn placement in `from_layout` (deterministic, grammar-
+order derived — no authored positions), then re-measure T1/T2 together.

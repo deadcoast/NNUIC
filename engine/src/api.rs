@@ -217,6 +217,13 @@ impl Engine {
         Ok(id)
     }
 
+    /// Diagnostic accessor for probes and tests: the live solver world.
+    /// Read-only; not part of the agent-facing surface.
+    #[doc(hidden)]
+    pub fn world_ref(&self) -> &crate::solver::World {
+        self.world.as_ref().expect("no program submitted")
+    }
+
     /// Run the solver to the settled predicate (or the frame budget) and
     /// return the settled-state hash. Idempotent at rest; settlement
     /// events fire on transitions only.

@@ -46,6 +46,18 @@ enum CKind {
     Turgor { p: usize, cx: f64, cy: f64, rest: f64 }, // bilateral, toward centroid
     Contact { a: usize, b: usize, rest: f64 },   // unilateral non-penetration
     Wall { p: usize, nx: f64, ny: f64, offset: f64 }, // unilateral confinement
+    /// D2: per-region area constraint (the paper's volume/occupancy
+    /// constraint) over the ordered hull vertices. Fill is SOLVED in the
+    /// projection loop — its multiplier accumulates, so elastic pullback
+    /// cannot starve growth, and wrapping is self-defeating (enclosed
+    /// foreign space counts against the wrapper's own area budget).
+    Area { hull: Vec<usize>, target: f64 },
+    /// D2 completion: pairwise region overlap as an IN-LOOP unilateral
+    /// constraint — the projection depth of the two regions along their
+    /// centroid axis, re-evaluated every sweep, resolved in translation
+    /// mode. Lives in the same Gauss–Seidel solve as the area
+    /// constraints, so the equilibrium is negotiated, not raced.
+    Overlap { ra: usize, rb: usize },
 }
 
 struct Constraint {
@@ -59,6 +71,17 @@ struct Constraint {
 /// deadband and latch may only grab geometrically valid matter; freezing a
 /// wedge makes non-penetration infinitely soft at rest, negating C1).
 const CONTACT_TOL: f64 = 0.05;
+/// D2 overlap slack: pairwise hull interpenetration below this is
+/// tolerated (the constraint stays inactive). Center hulls of properly
+/// tiled matter are separated by a full contact rest (~2 particle
+/// radii), so any positive SAT depth is already interleaving; the slack
+/// just keeps the constraint from chattering at the boundary.
+const OVERLAP_SLACK: f64 = 0.25;
+/// Arrest threshold for the hull-level C1 guard: a pair deeper than this
+/// is a topological violation still being resolved — not arrestable.
+/// Sits above OVERLAP_SLACK so there is hysteresis between where the
+/// constraint pushes to (≤ slack) and where the latch may engage.
+const OVERLAP_ARREST: f64 = 0.5;
 /// Consecutive all-sub-yield frames before a region latches into rest
 /// (~0.4 s at 60 fps) — the region-granular realization of the v0.2
 /// jamming latch (paper §7.3). Public: the API layer reads the latch as
@@ -363,15 +386,154 @@ impl World {
             }
         }
         }
+        // D2: fill as per-region AREA constraints (the paper's
+        // volume/occupancy constraint) — solved jointly with everything
+        // else, so growth cannot be starved and wrapping is
+        // self-defeating. Held (skipped) for resting regions like all
+        // material constraints.
+        if self.fill_enabled {
+            const ALPHA_AREA: f64 = 1.0e-4;
+            for r in 0..self.regions.len() {
+                if self.rest_t[r] >= REST_FRAMES
+                    || r >= self.area_target.len()
+                {
+                    continue;
+                }
+                let reg = &self.regions[r];
+                let hull = convex_hull_indices(
+                    &self.pos,
+                    reg.first,
+                    reg.count,
+                );
+                // NOTE (pour shape, measured): ramped effective targets
+                // were tried twice — growth relative to own size (2%/f)
+                // and synchronized target-share increments — and both
+                // WORSENED the worst-pair jam (3.2% → 22% → 33.5% hull
+                // overlap): the jam is seeded by spawn placement, not
+                // pour speed, and a slow pour gives the seeded engulfment
+                // longer to consolidate. The instant target with the
+                // XPBD compliance as the rate limit is the best-measured
+                // pour (see CHANGELOG 027).
+                cs.push(Constraint {
+                    kind: CKind::Area {
+                        hull,
+                        target: self.area_target[r],
+                    },
+                    alpha: ALPHA_AREA,
+                    lambda: 0.0,
+                });
+            }
+            // D2 completion: overlap constraints for awake pairs whose
+            // bounding boxes intersect — axis fixed per frame, depth
+            // re-evaluated every sweep in projection (in-loop, so the
+            // equilibrium with the area constraints is negotiated).
+            const ALPHA_OVERLAP: f64 = 1.0e-3;
+            let n_r = self.regions.len();
+            let mut boxes = Vec::with_capacity(n_r);
+            for r in 0..n_r {
+                let reg = &self.regions[r];
+                let (mut minx, mut miny) =
+                    (f64::INFINITY, f64::INFINITY);
+                let (mut maxx, mut maxy) =
+                    (f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for k in reg.first..reg.first + reg.count {
+                    let p = self.pos[k];
+                    minx = minx.min(p.x);
+                    miny = miny.min(p.y);
+                    maxx = maxx.max(p.x);
+                    maxy = maxy.max(p.y);
+                }
+                boxes.push((minx, miny, maxx, maxy));
+            }
+            for a in 0..n_r {
+                for b in (a + 1)..n_r {
+                    if self.rest_t[a] >= REST_FRAMES
+                        && self.rest_t[b] >= REST_FRAMES
+                    {
+                        continue;
+                    }
+                    let (ax0, ay0, ax1, ay1) = boxes[a];
+                    let (bx0, by0, bx1, by1) = boxes[b];
+                    if ax1 < bx0 || bx1 < ax0 || ay1 < by0 || by1 < ay0
+                    {
+                        continue;
+                    }
+                    cs.push(Constraint {
+                        kind: CKind::Overlap { ra: a, rb: b },
+                        alpha: ALPHA_OVERLAP,
+                        lambda: 0.0,
+                    });
+                }
+            }
+
+            // D2: binds as E_cohesion across the INTERFACE — a distance
+            // constraint pulling the nearest particle pair of the two
+            // regions to contact rest, constant soft compliance (never
+            // stiffness-scaled, C7). Adjacency is the demand, never
+            // superposition: a rest-0 anchor on lattice-coincident
+            // particles drags bound cells INTO each other (measured:
+            // SAT depth 26 on a bound pair — near-total overlap the
+            // exclusion constraint then fights forever). With area
+            // protected by its own constraint, translation is the only
+            // compliant path — one interface spring transports bulk.
+            const ALPHA_BIND: f64 = 0.3;
+            for &(ra, rb) in &self.binds {
+                if self.rest_t[ra] >= REST_FRAMES
+                    && self.rest_t[rb] >= REST_FRAMES
+                {
+                    continue;
+                }
+                let a = self.regions[ra];
+                let b = self.regions[rb];
+                // deterministic nearest pair: index-ordered scan, strict
+                // improvement keeps the first minimum
+                let (mut ka, mut kb, mut best) =
+                    (a.first, b.first, f64::INFINITY);
+                for i in a.first..a.first + a.count {
+                    for j in b.first..b.first + b.count {
+                        let d = self.pos[i].sub(self.pos[j]).len();
+                        if d < best {
+                            best = d;
+                            ka = i;
+                            kb = j;
+                        }
+                    }
+                }
+                cs.push(Constraint {
+                    kind: CKind::Dist {
+                        a: ka,
+                        b: kb,
+                        rest: self.radius[ka] + self.radius[kb],
+                    },
+                    alpha: ALPHA_BIND,
+                    lambda: 0.0,
+                });
+            }
+        }
+
         // contacts: non-penetration is stiff for every material. Two regions do
         // not interpenetrate regardless of how soft each is; material softness
         // lives in cohesion/turgor (how a region deforms), not in whether
         // regions can occupy the same space.
+        // Held for latched pairs like every other constraint: a
+        // cage-latched jam holds its residual contact violation as
+        // bounded prestress (§7.3); re-projecting it at rest is what
+        // erupts a settled packing (measured: 4.9 u/s flicker at
+        // observation frame 0). A contact with an AWAKE side stays —
+        // flowing matter must not pass through latched matter.
         for (a, b, rest) in self.build_contacts() {
+            if self.rest_t[self.region_of[a]] >= REST_FRAMES
+                && self.rest_t[self.region_of[b]] >= REST_FRAMES
+            {
+                continue;
+            }
             cs.push(Constraint { kind: CKind::Contact { a, b, rest }, alpha: self.alpha_contact, lambda: 0.0 });
         }
-        // walls
+        // walls — held for latched regions (same rest semantics)
         for p in 0..self.pos.len() {
+            if self.rest_t[self.region_of[p]] >= REST_FRAMES {
+                continue;
+            }
             let r = self.radius[p];
             cs.push(Constraint { kind: CKind::Wall { p, nx: 1.0, ny: 0.0, offset: r }, alpha: self.alpha_wall, lambda: 0.0 });
             cs.push(Constraint { kind: CKind::Wall { p, nx: -1.0, ny: 0.0, offset: r - self.w }, alpha: self.alpha_wall, lambda: 0.0 });
@@ -384,21 +546,127 @@ impl World {
     #[inline]
     fn project(&mut self, c: &mut Constraint, dt2: f64) {
         let alpha_tilde = c.alpha / dt2;
+        if let CKind::Area { ref hull, target } = c.kind {
+            // D2: XPBD area constraint over the ordered hull. One scalar
+            // multiplier per region; polygon-area gradients on vertices.
+            let hull = hull.clone();
+            let n = hull.len();
+            if n < 3 {
+                return;
+            }
+            let mut area = 0.0;
+            for i in 0..n {
+                let p = self.pos[hull[i]];
+                let q = self.pos[hull[(i + 1) % n]];
+                area += p.x * q.y - q.x * p.y;
+            }
+            area *= 0.5;
+            let cval = area - target;
+            let mut denom = alpha_tilde;
+            let mut grads = Vec::with_capacity(n);
+            for i in 0..n {
+                let prev = self.pos[hull[(i + n - 1) % n]];
+                let next = self.pos[hull[(i + 1) % n]];
+                let g = Vec2::new(
+                    0.5 * (next.y - prev.y),
+                    0.5 * (prev.x - next.x),
+                );
+                denom += self.inv_mass[hull[i]] * g.dot(g);
+                grads.push(g);
+            }
+            if denom <= 0.0 {
+                return;
+            }
+            let dl = (-cval - alpha_tilde * c.lambda) / denom;
+            c.lambda += dl;
+            for i in 0..n {
+                let k = hull[i];
+                self.pos[k] = self.pos[k]
+                    .add(grads[i].scale(self.inv_mass[k] * dl));
+            }
+            return;
+        }
+        if let CKind::Overlap { ra, rb } = c.kind {
+            // Exact convex-polygon SAT: for convex hulls a separating
+            // axis, if one exists, is an edge normal of one of the two
+            // hulls. Testing arbitrary axes both misses real overlap and
+            // pushes pairs that do not overlap (measured: sustained
+            // false-positive pushing broke settle at tight slack).
+            // Resolution is along the minimum-translation axis.
+            let (depth, dir) = self.pair_sat(ra, rb);
+            if depth <= OVERLAP_SLACK {
+                return; // separated (or within slack): inactive
+            }
+            let a = Region { ..self.regions[ra] };
+            let b = Region { ..self.regions[rb] };
+            let cval = depth - OVERLAP_SLACK;
+            let na = a.count as f64;
+            let nb = b.count as f64;
+            // a latched region is rigid at rest: infinite mass here —
+            // the awake side does all the moving
+            let wa = if self.rest_t[ra] >= REST_FRAMES {
+                0.0
+            } else {
+                1.0 / na
+            };
+            let wb = if self.rest_t[rb] >= REST_FRAMES {
+                0.0
+            } else {
+                1.0 / nb
+            };
+            if wa + wb == 0.0 {
+                return;
+            }
+            let denom = wa + wb + alpha_tilde;
+            let dl = (-cval - alpha_tilde * c.lambda) / denom;
+            c.lambda += dl;
+            // XPBD signs: dl < 0 for a violated (positive) C, and the
+            // gradients are +dir/na for A, -dir/nb for B — so A moves
+            // AGAINST dir (away from b) and B along it.
+            if wa > 0.0 {
+                let da = dir.scale(dl / na);
+                for k in a.first..a.first + a.count {
+                    self.pos[k] = self.pos[k].add(da);
+                }
+            }
+            if wb > 0.0 {
+                let db = dir.scale(-dl / nb);
+                for k in b.first..b.first + b.count {
+                    self.pos[k] = self.pos[k].add(db);
+                }
+            }
+            return;
+        }
+        // Rigid at rest (§7): a latched region's particles have infinite
+        // mass in every surviving pairwise constraint — awake matter
+        // flows AROUND settled matter, it does not shove it supra-yield
+        // and tear the latch open (measured: 13 CellSettled events for 4
+        // cells — settle-event flapping during consolidation).
+        let eff = |w: &World, k: usize| -> f64 {
+            if w.rest_t[w.region_of[k]] >= REST_FRAMES {
+                0.0
+            } else {
+                w.inv_mass[k]
+            }
+        };
         match c.kind {
+            CKind::Area { .. } => {}
+            CKind::Overlap { .. } => {}
             CKind::Dist { a, b, rest } => {
                 let d = self.pos[a].sub(self.pos[b]);
                 let len = d.len();
                 let cval = len - rest;
                 let n = d.norm_or(Vec2::new(1.0, 0.0));
-                let wsum = self.inv_mass[a] + self.inv_mass[b];
+                let (wa, wb) = (eff(self, a), eff(self, b));
+                let wsum = wa + wb;
                 let denom = wsum + alpha_tilde;
-                if denom == 0.0 {
+                if wsum == 0.0 || denom == 0.0 {
                     return;
                 }
                 let dl = (-cval - alpha_tilde * c.lambda) / denom;
                 c.lambda += dl;
-                self.pos[a] = self.pos[a].add(n.scale(self.inv_mass[a] * dl));
-                self.pos[b] = self.pos[b].add(n.scale(-self.inv_mass[b] * dl));
+                self.pos[a] = self.pos[a].add(n.scale(wa * dl));
+                self.pos[b] = self.pos[b].add(n.scale(-wb * dl));
             }
             CKind::Turgor { p, cx, cy, rest } => {
                 let anchor = Vec2::new(cx, cy);
@@ -423,15 +691,16 @@ impl World {
                     return; // separated: unilateral, inactive
                 }
                 let n = d.norm_or(Vec2::new(1.0, 0.0));
-                let wsum = self.inv_mass[a] + self.inv_mass[b];
+                let (wa, wb) = (eff(self, a), eff(self, b));
+                let wsum = wa + wb;
                 let denom = wsum + alpha_tilde;
-                if denom == 0.0 {
+                if wsum == 0.0 || denom == 0.0 {
                     return;
                 }
                 let dl = (-cval - alpha_tilde * c.lambda) / denom;
                 c.lambda += dl;
-                self.pos[a] = self.pos[a].add(n.scale(self.inv_mass[a] * dl));
-                self.pos[b] = self.pos[b].add(n.scale(-self.inv_mass[b] * dl));
+                self.pos[a] = self.pos[a].add(n.scale(wa * dl));
+                self.pos[b] = self.pos[b].add(n.scale(-wb * dl));
             }
             CKind::Wall { p, nx, ny, offset } => {
                 let n = Vec2::new(nx, ny);
@@ -534,7 +803,22 @@ impl World {
     /// over the vessel. Material state determines size (§9); nothing is
     /// authored.
     pub fn set_area_targets(&mut self) {
-        let total = self.w * self.h;
+        // Targets are CENTER-HULL areas, so they must share the domain
+        // hull centers can actually reach: the vessel inset by the
+        // particle radius band (walls hold centers a radius off the
+        // boundary; matter covers the band, centers cannot). Shares of
+        // the full vessel command more hull than fits — overlap becomes
+        // the only satisfying state (measured: hulls 1.2–1.9× vessel).
+        // Radius depends on dilated spacing which depends on the target,
+        // so fix-point the inset (converges in a couple of rounds).
+        let n: usize = self.regions.iter().map(|r| r.count).sum();
+        let mut inset = self.w * self.h;
+        for _ in 0..3 {
+            let spacing = (inset / n.max(1) as f64).sqrt();
+            let r = (0.5 * spacing).clamp(0.5, 6.0);
+            inset = (self.w - 2.0 * r).max(1.0)
+                * (self.h - 2.0 * r).max(1.0);
+        }
         let weights: Vec<f64> = self
             .regions
             .iter()
@@ -542,7 +826,7 @@ impl World {
             .collect();
         let sum: f64 = weights.iter().sum();
         self.area_target =
-            weights.iter().map(|w| total * w / sum).collect();
+            weights.iter().map(|w| inset * w / sum).collect();
     }
 
     fn cage_t_len(&self) -> usize {
@@ -559,7 +843,6 @@ impl World {
         // are claimed (tessellation). While filling, the frame is
         // effectively accelerating (the boot pour): ξ rebuild is
         // suspended (§7.2) so the medium flows freely into void.
-        const G_FILL: f64 = 8.0; // outward drive u/s at S=0, yields vs S
         if self.fill_enabled && !self.fill_done && self.frame % 15 == 0 {
             let occ = self.occupancy();
             let stalled = occ > 0.985 || occ - self.last_occ < 0.0004;
@@ -614,7 +897,7 @@ impl World {
                 }
                 // mean cohesion rest ≈ 1.14 × lattice spacing (diagonals)
                 let spacing = sum[r] / cnt[r] as f64 / 1.14;
-                let pr = (0.5 * spacing).clamp(0.5, 2.0);
+                let pr = (0.5 * spacing).clamp(0.5, 6.0);
                 if pr > maxr {
                     maxr = pr;
                 }
@@ -637,199 +920,9 @@ impl World {
                     self.pos[i].add(self.vel[i].scale(self.damping * dt));
             }
         }
-        if filling {
-            // E_fill, the proven realization: radial dilation claims
-            // volume at a rate that yields against S (sizes solved from
-            // material, §9); plastic rests flatten pressed fronts into
-            // tiles. Near walls, a void-seeking bias (away from the local
-            // matter centroid) creeps matter along the wall into corners
-            // — restricted to the wall band, because applied globally it
-            // pulls taffy shards.
-            use std::collections::HashMap;
-            let inv = 1.0 / self.cell;
-            let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
-            for i in 0..self.pos.len() {
-                let gx = (self.pos[i].x * inv).floor() as i64;
-                let gy = (self.pos[i].y * inv).floor() as i64;
-                grid.entry((gx, gy)).or_default().push(i);
-            }
-            let rr: f64 = 3.0;
-            let rr2 = rr * rr;
-            let span = rr.ceil() as i64;
-            let wall_near = 4.0;
-            for r in 0..self.regions.len() {
-                if self.rest_t[r] >= REST_FRAMES {
-                    continue;
-                }
-                let reg = Region { ..self.regions[r] };
-                let g = G_FILL * (1.0 - reg.mat.s).max(0.0) * dt;
-                let c = centroids_pre[r];
-                for k in reg.first..reg.first + reg.count {
-                    let p = self.pos[k];
-                    let radial =
-                        p.sub(c).norm_or(Vec2::new(1.0, 0.0));
-                    let near_wall = p.x < wall_near
-                        || p.y < wall_near
-                        || p.x > self.w - wall_near
-                        || p.y > self.h - wall_near;
-                    let dir = if near_wall {
-                        let gx = (p.x * inv).floor() as i64;
-                        let gy = (p.y * inv).floor() as i64;
-                        let (mut sx, mut sy, mut nb) = (0.0, 0.0, 0u32);
-                        for dy in -span..=span {
-                            for dx in -span..=span {
-                                if let Some(b) =
-                                    grid.get(&(gx + dx, gy + dy))
-                                {
-                                    for &j in b {
-                                        let d = self.pos[j].sub(p);
-                                        if d.dot(d) < rr2 {
-                                            sx += self.pos[j].x;
-                                            sy += self.pos[j].y;
-                                            nb += 1;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if nb > 1 {
-                            let m = Vec2::new(
-                                sx / nb as f64,
-                                sy / nb as f64,
-                            );
-                            let voidward =
-                                p.sub(m).norm_or(Vec2::zero());
-                            // in a corner zone the deepest void is the
-                            // corner wedge itself: void-seeking owns the
-                            // direction (radial fights the diagonal)
-                            let cb = 6.0;
-                            let in_corner = (p.x < cb
-                                || p.x > self.w - cb)
-                                && (p.y < cb || p.y > self.h - cb);
-                            if in_corner {
-                                voidward
-                            } else {
-                                radial
-                                    .add(voidward.scale(1.2))
-                                    .norm_or(radial)
-                            }
-                        } else {
-                            radial
-                        }
-                    } else {
-                        radial
-                    };
-                    self.pos[k] = self.pos[k].add(dir.scale(g));
-                }
-            }
-        }
-
-        // Deliberate binds (E_cohesion across the marked interface):
-        // interfacial tension transports the BULK of both regions toward
-        // each other, as a quasi-static displacement (C2), until they sit
-        // adjacent — stiff contacts stop overlap, so the group packs.
-        // A single-anchor spring fails here: plasticity absorbs it and
-        // the anchor migrates while the body never moves.
-        if self.fill_enabled {
-            const G_BIND: f64 = 3.0;
-            let half_extent = |w: &World, r: usize| -> f64 {
-                let reg = &w.regions[r];
-                let c = centroids_pre[r];
-                let mut m = 0.0f64;
-                for k in reg.first..reg.first + reg.count {
-                    let d = w.pos[k].sub(c).len();
-                    if d > m {
-                        m = d;
-                    }
-                }
-                m
-            };
-            let binds = self.binds.clone();
-            for (ra, rb) in binds {
-                if self.rest_t[ra] >= REST_FRAMES
-                    && self.rest_t[rb] >= REST_FRAMES
-                {
-                    continue;
-                }
-                let ea = half_extent(self, ra);
-                let eb = half_extent(self, rb);
-                let d = centroids_pre[rb].sub(centroids_pre[ra]);
-                if d.len() > (ea + eb) * 1.05 {
-                    let dir = d.norm_or(Vec2::new(1.0, 0.0));
-                    let step = dir.scale(G_BIND * dt);
-                    let (a0, ac) =
-                        (self.regions[ra].first, self.regions[ra].count);
-                    for k in a0..a0 + ac {
-                        self.pos[k] = self.pos[k].add(step);
-                    }
-                    let (b0, bc) =
-                        (self.regions[rb].first, self.regions[rb].count);
-                    for k in b0..b0 + bc {
-                        self.pos[k] = self.pos[k].sub(step);
-                    }
-                }
-            }
-        }
-
-        // Sibling exclusion (topological, C1 class): two same-level cells
-        // may pack adjacent but never NEST. Detection is hull
-        // containment — adjacent tiles never contain each other's
-        // centroids, but a wrapping arm's convex hull covers the pocket
-        // as soon as the wrap begins, so real engulfment fires early and
-        // honest packing never does. Resolution: bounded symmetric bulk
-        // separation along the centroid axis (the wrap victim is pushed
-        // out of the shallow pocket; the wrapper is pushed back).
-        if self.fill_enabled {
-            const SEP_CAP: f64 = 8.0; // max separation speed, u/s
-            let n_r = self.regions.len();
-            let hulls: Vec<Vec<Vec2>> = (0..n_r)
-                .map(|r| {
-                    let reg = Region { ..self.regions[r] };
-                    convex_hull(
-                        &self.pos[reg.first..reg.first + reg.count],
-                    )
-                })
-                .collect();
-            let areas: Vec<f64> =
-                hulls.iter().map(|h| poly_area(h)).collect();
-            for a in 0..n_r {
-                for b in (a + 1)..n_r {
-                    if self.rest_t[a] >= REST_FRAMES
-                        && self.rest_t[b] >= REST_FRAMES
-                    {
-                        continue;
-                    }
-                    // the exclusion enforces T1's own metric: pairwise
-                    // hull intersection as a fraction of the smaller
-                    // cell. Adjacent tiles overlap ~0; a bite or wrap
-                    // overlaps early and is pushed out proportionally.
-                    // KNOWN LIMIT (journal 025): as a bounded drive this
-                    // equilibrates against fill at ~4% overlap — above
-                    // the 2% T1 bar. The next design pass reformulates
-                    // fill/exclusion/bind as XPBD constraints.
-                    let inter =
-                        clip_convex(&hulls[a], &hulls[b]);
-                    let frac = poly_area(&inter)
-                        / areas[a].min(areas[b]).max(1.0);
-                    if frac < 0.005 {
-                        continue;
-                    }
-                    let d = centroids_pre[b].sub(centroids_pre[a]);
-                    let dir = d.norm_or(Vec2::new(1.0, 0.0));
-                    let push =
-                        SEP_CAP * dt * (frac * 10.0).min(1.0) * 0.5;
-                    let step = dir.scale(push);
-                    let ra = Region { ..self.regions[a] };
-                    for k in ra.first..ra.first + ra.count {
-                        self.pos[k] = self.pos[k].sub(step);
-                    }
-                    let rb = Region { ..self.regions[b] };
-                    for k in rb.first..rb.first + rb.count {
-                        self.pos[k] = self.pos[k].add(step);
-                    }
-                }
-            }
-        }
+        // D2 (addendum v0.3): fill and binding are constraints, solved in
+        // the projection loop (see assemble); no drives remain here.
+        let _ = filling;
 
         // E_cohesion (addendum v0.3 design): interface tension as
         // boundary curvature flow. Boundary particles are detected by
@@ -952,6 +1045,24 @@ impl World {
         // rests hold — elastic below yield.
         if self.fill_enabled {
             const PLASTIC: f64 = 6.0;
+            // The plastic ratchet is BOUNDED by the solved share: rests
+            // exist to realize the region's occupancy target, never to
+            // memorize transient overshoot. Unbounded rests let natural
+            // matter exceed the share; summed over regions that is more
+            // matter than vessel (measured: 1.6×), separation becomes
+            // infeasible, and the C1 guard then rightly never lets the
+            // over-packed medium arrest.
+            let cap_spacing: Vec<f64> = (0..self.regions.len())
+                .map(|r| {
+                    if r < self.area_target.len() {
+                        (self.area_target[r]
+                            / self.regions[r].count as f64)
+                            .sqrt()
+                    } else {
+                        f64::INFINITY
+                    }
+                })
+                .collect();
             for i in 0..self.cohesion.len() {
                 let (a, b, rest) = self.cohesion[i];
                 let r = self.region_of[a];
@@ -961,7 +1072,10 @@ impl World {
                 let s = self.regions[r].mat.s;
                 let d = self.pos[a].sub(self.pos[b]).len();
                 let k = (PLASTIC * (1.0 - s) * dt).min(1.0);
-                self.cohesion[i] = (a, b, rest + (d - rest) * k);
+                // mean cohesion rest ≈ 1.14 × lattice spacing
+                let cap = 1.14 * cap_spacing[r];
+                self.cohesion[i] =
+                    (a, b, (rest + (d - rest) * k).min(cap));
             }
             for r in 0..self.regions.len() {
                 if self.rest_t[r] >= REST_FRAMES {
@@ -971,9 +1085,17 @@ impl World {
                 let s = reg.mat.s;
                 let k = (PLASTIC * (1.0 - s) * dt).min(1.0);
                 let c = centroids_pre[r];
+                // corner reach of a square tile of the target area
+                let cap = if r < self.area_target.len() {
+                    0.75 * self.area_target[r].sqrt()
+                } else {
+                    f64::INFINITY
+                };
                 for p in reg.first..reg.first + reg.count {
                     let d = self.pos[p].sub(c).len();
-                    self.turgor_rest[p] += (d - self.turgor_rest[p]) * k;
+                    self.turgor_rest[p] = (self.turgor_rest[p]
+                        + (d - self.turgor_rest[p]) * k)
+                        .min(cap);
                 }
             }
         }
@@ -1038,6 +1160,33 @@ impl World {
                 arrestable[p] = false;
             }
         }
+        // C1 guard, hull level (D2): a region pair whose convex hulls
+        // interpenetrate beyond OVERLAP_ARREST is a topological
+        // violation still being resolved — not arrestable while it still
+        // moves. Without this the deadband arrests the sub-yield
+        // separation drift and the latch freezes the interleave in
+        // (measured: 5.4% hull overlap latched on dashboard). Cage
+        // precedence is the SAME as the contact guard's (§7.3): a jammed
+        // pair at zero net transport is macroscopically at rest — the
+        // held overlap is bounded internal prestress, and clearing the
+        // cage here livelocks the whole medium on one stuck pair
+        // (measured: 30k frames, no latch, depths frozen).
+        if !filling {
+            let n_r = self.regions.len();
+            for a in 0..n_r {
+                for b in (a + 1)..n_r {
+                    let (depth, _) = self.pair_sat(a, b);
+                    if depth <= OVERLAP_ARREST {
+                        continue;
+                    }
+                    for reg in [&self.regions[a], &self.regions[b]] {
+                        for k in reg.first..reg.first + reg.count {
+                            arrestable[k] = false;
+                        }
+                    }
+                }
+            }
+        }
 
         // v0.2 arrest mechanism (paper §7), region-granular. Below yield a
         // Bingham-class material does not flow at all: sub-yield frame
@@ -1076,8 +1225,16 @@ impl World {
             // OR when it is caged rattle (zero net transport — the cage
             // overrides the C1 guard for topologically unresolvable
             // wedges; the held overlap is bounded internal prestress).
+            // Latch hysteresis: the guards gate ENTRY into rest, never
+            // continuation — a latched region wakes only on supra-yield
+            // motion (§7). Without this, the first cage recompute after
+            // settling reads pre-latch consolidation transport, drops
+            // rattle, and tears a held jam open (measured: 37.8 u/s
+            // eruption at observation frame 1).
+            let latched = self.rest_t[r] >= REST_FRAMES;
             let quiet = |k: usize, v: f64| -> bool {
-                (arrestable[k] && v < vy) || self.rattle[k]
+                ((arrestable[k] || latched) && v < vy)
+                    || self.rattle[k]
             };
             let mut all_quiet = true;
             for k in reg.first..reg.first + reg.count {
@@ -1117,6 +1274,70 @@ impl World {
     }
 
     /// Max particle speed — the strain-rate proxy for the settled predicate.
+    /// Exact convex-polygon SAT for a region pair: the minimum interval
+    /// overlap over every edge normal of both particle-center hulls
+    /// (exact for convex shapes — a separating axis, if one exists, is
+    /// among these normals). Returns (depth, dir): depth > 0 is the
+    /// minimum-translation interpenetration, depth < 0 the separation
+    /// margin; dir is the resolution axis oriented from `ra` toward
+    /// `rb`. Deterministic: hulls and edge order are index-stable.
+    pub fn pair_sat(&self, ra: usize, rb: usize) -> (f64, Vec2) {
+        let reg_a = &self.regions[ra];
+        let reg_b = &self.regions[rb];
+        let ha = convex_hull(
+            &self.pos[reg_a.first..reg_a.first + reg_a.count],
+        );
+        let hb = convex_hull(
+            &self.pos[reg_b.first..reg_b.first + reg_b.count],
+        );
+        if ha.len() < 3 || hb.len() < 3 {
+            // degenerate (collinear) region: no polygon to test
+            return (f64::NEG_INFINITY, Vec2::new(1.0, 0.0));
+        }
+        let mut depth = f64::INFINITY;
+        let mut dir = Vec2::new(1.0, 0.0);
+        for hull in [&ha, &hb] {
+            let m = hull.len();
+            for i in 0..m {
+                let e = hull[(i + 1) % m].sub(hull[i]);
+                let l = e.len();
+                if l < 1.0e-9 {
+                    continue;
+                }
+                let axis = Vec2::new(-e.y / l, e.x / l);
+                let proj = |h: &[Vec2]| {
+                    let (mut lo, mut hi) =
+                        (f64::INFINITY, f64::NEG_INFINITY);
+                    for p in h {
+                        let t = p.dot(axis);
+                        lo = lo.min(t);
+                        hi = hi.max(t);
+                    }
+                    (lo, hi)
+                };
+                let (alo, ahi) = proj(&ha);
+                let (blo, bhi) = proj(&hb);
+                let ov = ahi.min(bhi) - alo.max(blo);
+                if ov < depth {
+                    depth = ov;
+                    dir = axis;
+                }
+            }
+        }
+        // orient the axis from a toward b (centroid order)
+        let cent = |h: &[Vec2]| {
+            let mut c = Vec2::zero();
+            for p in h {
+                c = c.add(*p);
+            }
+            c.scale(1.0 / h.len() as f64)
+        };
+        if cent(&hb).sub(cent(&ha)).dot(dir) < 0.0 {
+            dir = dir.scale(-1.0);
+        }
+        (depth, dir)
+    }
+
     pub fn max_speed(&self) -> f64 {
         let mut m = 0.0;
         for i in 0..self.vel.len() {
@@ -1136,16 +1357,20 @@ impl World {
     /// what guarantees every particle's jamming latch has matured, so a
     /// settled state cannot erupt when stepped again.
     pub fn settle(&mut self, max_frames: usize) -> usize {
-        let mut quiet = 0usize;
         for f in 0..max_frames {
             self.step();
-            if self.max_speed() < self.eps_settle {
-                quiet += 1;
-                if quiet > REST_FRAMES as usize {
-                    return f + 1;
-                }
-            } else {
-                quiet = 0;
+            // The pour phase is supra-yield by definition (§7.2): matter
+            // still claiming space cannot be settled, however quiet the
+            // stalled tail looks. Speed-based quiet alone is NOT the
+            // predicate — it can trigger between fill close and latch
+            // maturity, returning a state that still consolidates.
+            if self.fill_enabled && !self.fill_done {
+                continue;
+            }
+            let latched =
+                self.rest_t.iter().all(|&t| t >= REST_FRAMES);
+            if latched && self.max_speed() < self.eps_settle {
+                return f + 1;
             }
         }
         max_frames
@@ -1169,8 +1394,8 @@ impl World {
     }
 }
 
-/// Deterministic convex hull (monotone chain), CCW. Used by the sibling
-/// exclusion; the API layer keeps its own copy for the read path.
+/// Deterministic convex hull (monotone chain), CCW.
+#[allow(dead_code)]
 fn convex_hull(points: &[Vec2]) -> Vec<Vec2> {
     let mut pts: Vec<Vec2> = points.to_vec();
     pts.sort_by(|a, b| {
@@ -1212,6 +1437,7 @@ fn convex_hull(points: &[Vec2]) -> Vec<Vec2> {
 }
 
 /// Shoelace area of a polygon.
+#[allow(dead_code)]
 fn poly_area(p: &[Vec2]) -> f64 {
     let n = p.len();
     if n < 3 {
@@ -1226,6 +1452,7 @@ fn poly_area(p: &[Vec2]) -> f64 {
 }
 
 /// Sutherland–Hodgman clip of `subject` against convex CCW `clip`.
+#[allow(dead_code)]
 fn clip_convex(subject: &[Vec2], clip: &[Vec2]) -> Vec<Vec2> {
     let mut out: Vec<Vec2> = subject.to_vec();
     let n = clip.len();
@@ -1270,10 +1497,63 @@ fn clip_convex(subject: &[Vec2], clip: &[Vec2]) -> Vec<Vec2> {
 // helper: shallow-copy a CKind (all Copy fields) so we can project without
 // borrowing cs mutably and self mutably at once.
 fn replace_kind(k: &CKind) -> CKind {
-    match *k {
-        CKind::Dist { a, b, rest } => CKind::Dist { a, b, rest },
-        CKind::Turgor { p, cx, cy, rest } => CKind::Turgor { p, cx, cy, rest },
-        CKind::Contact { a, b, rest } => CKind::Contact { a, b, rest },
-        CKind::Wall { p, nx, ny, offset } => CKind::Wall { p, nx, ny, offset },
+    match k {
+        CKind::Dist { a, b, rest } => {
+            CKind::Dist { a: *a, b: *b, rest: *rest }
+        }
+        CKind::Turgor { p, cx, cy, rest } => {
+            CKind::Turgor { p: *p, cx: *cx, cy: *cy, rest: *rest }
+        }
+        CKind::Contact { a, b, rest } => {
+            CKind::Contact { a: *a, b: *b, rest: *rest }
+        }
+        CKind::Wall { p, nx, ny, offset } => {
+            CKind::Wall { p: *p, nx: *nx, ny: *ny, offset: *offset }
+        }
+        CKind::Area { hull, target } => {
+            CKind::Area { hull: hull.clone(), target: *target }
+        }
+        CKind::Overlap { ra, rb } => {
+            CKind::Overlap { ra: *ra, rb: *rb }
+        }
     }
+}
+
+/// Convex hull of a region's particles returning GLOBAL indices, CCW
+/// (monotone chain over (position, index), deterministic).
+fn convex_hull_indices(pos: &[Vec2], first: usize, count: usize) -> Vec<usize> {
+    let mut pts: Vec<(f64, f64, usize)> = (first..first + count)
+        .map(|i| (pos[i].x, pos[i].y, i))
+        .collect();
+    pts.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap())
+    });
+    if pts.len() < 3 {
+        return pts.into_iter().map(|p| p.2).collect();
+    }
+    let cross = |o: (f64, f64, usize), a: (f64, f64, usize), b: (f64, f64, usize)| {
+        (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+    };
+    let mut lower: Vec<(f64, f64, usize)> = Vec::new();
+    for &p in &pts {
+        while lower.len() >= 2
+            && cross(lower[lower.len() - 2], lower[lower.len() - 1], p) <= 0.0
+        {
+            lower.pop();
+        }
+        lower.push(p);
+    }
+    let mut upper: Vec<(f64, f64, usize)> = Vec::new();
+    for &p in pts.iter().rev() {
+        while upper.len() >= 2
+            && cross(upper[upper.len() - 2], upper[upper.len() - 1], p) <= 0.0
+        {
+            upper.pop();
+        }
+        upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower.into_iter().map(|p| p.2).collect()
 }
